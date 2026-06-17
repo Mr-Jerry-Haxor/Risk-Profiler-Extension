@@ -1,8 +1,11 @@
 import {
     fail,
+    hasAnswer,
+    includesValue,
     isYes,
     notApplicable,
-    pass
+    pass,
+    valueContainsAny
 }
 from "./helpers.js";
 
@@ -13,6 +16,7 @@ const RP7 = {
 
     async validate(context) {
 
+        // Case 2: CSIR-ExportControlled is No — not applicable
         if (
             !isYes(
                 context,
@@ -26,6 +30,27 @@ const RP7 = {
             );
         }
 
+        // Case 1: CSIR-ExportControlled is Yes but jurisdiction is Other — not applicable
+        const jurisdictionIsOther =
+            valueContainsAny(
+                context,
+                "CSIR-ExportControlled-Jurisdiction",
+                [
+                    "other"
+                ]
+            );
+
+        if (
+            jurisdictionIsOther
+        ) {
+
+            return notApplicable(
+                this.id,
+                "CSIR-ExportControlled is Yes but jurisdiction is Other — EAR/ITAR check does not apply."
+            );
+        }
+
+        // Case 3: Check that at least one of EAR-NLR, EAR-LR, or ITAR is selected Yes
         const hasRequiredType =
             [
                 "CSIR-USEC-EAR-NLR",
@@ -46,7 +71,7 @@ const RP7 = {
             )
             : fail(
                 this.id,
-                "Export Controlled is Yes, but EAR-NLR, EAR-LR, and ITAR are not selected as Yes."
+                "Export Controlled is Yes, but none of EAR-NLR, EAR-LR, or ITAR are selected as Yes."
             );
     }
 };
