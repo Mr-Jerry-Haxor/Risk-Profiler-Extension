@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+
+  "name": "Risk Profiler Validator",
+
+  "version": "1.0.0",
+
+  "description": "Risk Profiler Assessment Validation Engine",
+
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "https://cairois.web.boeing.com/*",
+    "https://service-gateway.tas-phx.apps.boeing.com/*",
+    "https://termbank.web.boeing.com/*",
+    "https://esats.web.boeing.com/*",
+    "https://gtc-ecm.web.boeing.com/*"
+  ],
+
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_title": "Risk Profiler Validator",
+    "default_popup": "popup.html"
+  }
+}

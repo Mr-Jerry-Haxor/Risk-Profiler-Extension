@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Risk Profiler Validator</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<div class="app">
+
+    <header class="header">
+
+        <div>
+            <div class="eyebrow">
+                Boeing Risk Profiler
+            </div>
+
+            <h1>
+                Validation Dashboard
+            </h1>
+        </div>
+
+        <button id="refreshBtn"
+                class="icon-btn">
+            ↻
+        </button>
+
+    </header>
+
+    <!-- PREREQUISITES -->
+
+    <section class="card prerequisites-card">
+
+        <div class="card-title-row">
+
+            <span>
+                Prerequisites
+            </span>
+
+            <div class="prereq-actions">
+
+                <div class="tooltip-wrap">
+
+                    <button
+                        id="prereqHelpBtn"
+                        class="icon-btn small-icon-btn"
+                        aria-label="Prerequisite instructions"
+                    >
+                        ?
+                    </button>
+
+                    <div
+                        class="tooltip-panel"
+                        role="tooltip"
+                    >
+                        <strong>
+                            Before validating
+                        </strong>
+
+                        <p>
+                            Open and sign in to Cairo, ESATS, and GTC in separate browser tabs first. Boeing WSSO stores the session cookies the extension needs for API requests.
+                        </p>
+
+                        <ol>
+                            <li>
+                                Sign in to Cairo and confirm the Cairo page loads.
+                            </li>
+
+                            <li>
+                                Sign in to ESATS and confirm the ESATS page loads.
+                            </li>
+
+                            <li>
+                                Sign in to GTC and confirm the GTC page loads.
+                            </li>
+
+                            <li>
+                                Return here and click Check Sessions. Green means the extension reached the target site; red means it likely hit WSSO/login or an auth error.
+                            </li>
+                        </ol>
+                    </div>
+
+                </div>
+
+                <button
+                    id="checkPrereqBtn"
+                    class="btn-secondary"
+                >
+                    Check Sessions
+                </button>
+
+            </div>
+
+        </div>
+
+        <div
+            id="prereqSummary"
+            class="prereq-summary"
+        >
+            Session checks have not run yet.
+        </div>
+
+        <div
+            id="prereqList"
+            class="prereq-list"
+        >
+            <div
+                class="prereq-item"
+                data-site="cairo"
+            >
+                <span class="signal signal-unknown"></span>
+                <div class="prereq-copy">
+                    <span>Cairo</span>
+                    <small>Not checked</small>
+                </div>
+            </div>
+
+            <div
+                class="prereq-item"
+                data-site="esats"
+            >
+                <span class="signal signal-unknown"></span>
+                <div class="prereq-copy">
+                    <span>ESATS</span>
+                    <small>Not checked</small>
+                </div>
+            </div>
+
+            <div
+                class="prereq-item"
+                data-site="gtc"
+            >
+                <span class="signal signal-unknown"></span>
+                <div class="prereq-copy">
+                    <span>GTC</span>
+                    <small>Not checked</small>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- FILTERS -->
+
+    <section class="card">
+
+        <div class="card-title">
+            Assessment Explorer
+        </div>
+
+        <input
+            id="searchInput"
+            class="input"
+            placeholder="Search applications..."
+        >
+
+        <div class="row">
+
+            <label class="checkbox-wrap">
+
+                <input
+                    type="checkbox"
+                    id="regexMode"
+                >
+
+                Regex Search
+
+            </label>
+
+        </div>
+
+        <div class="grid-2">
+
+            <input
+                type="date"
+                id="fromDate"
+                class="input"
+            >
+
+            <input
+                type="date"
+                id="toDate"
+                class="input"
+            >
+
+        </div>
+
+        <div class="grid-2">
+
+            <select
+                id="lifeCycleFilter"
+                class="input"
+            >
+                <option value="">
+                    All Lifecycles
+                </option>
+
+                <option value="Production">
+                    Production
+                </option>
+
+                <option value="Development">
+                    Development
+                </option>
+
+                <option value="Retired">
+                    Retired
+                </option>
+
+            </select>
+
+            <select
+                id="ownerFilter"
+                class="input"
+            >
+                <option value="">
+                    All Owners
+                </option>
+            </select>
+
+        </div>
+
+    </section>
+
+    <!-- SELECTION -->
+
+    <section class="card">
+
+        <div class="card-title-row">
+
+            <span>
+                Assessments
+            </span>
+
+            <span
+                id="selectedCount"
+                class="badge"
+            >
+                0 Selected
+            </span>
+
+        </div>
+
+        <div class="selection-actions">
+
+            <button
+                id="selectAllBtn"
+                class="btn-secondary"
+            >
+                Select All
+            </button>
+
+            <button
+                id="clearSelectionBtn"
+                class="btn-secondary"
+            >
+                Clear
+            </button>
+
+        </div>
+
+        <div
+            id="assessmentList"
+            class="assessment-list"
+        >
+        </div>
+
+    </section>
+
+    <!-- VALIDATION -->
+
+    <section class="card">
+
+        <button
+            id="validateBtn"
+            class="btn-primary"
+        >
+            Validate Selected
+        </button>
+
+        <button
+            id="cancelBtn"
+            class="btn-danger hidden"
+        >
+            Cancel Validation
+        </button>
+
+        <button
+            id="retryFailedBtn"
+            class="btn-secondary hidden"
+        >
+            Retry Failed
+        </button>
+
+        <div
+            id="progressContainer"
+            class="hidden"
+        >
+
+            <div
+                id="progressText"
+                class="progress-text"
+            >
+                Starting...
+            </div>
+
+            <div class="progress-bar">
+
+                <div
+                    id="progressFill"
+                    class="progress-fill"
+                >
+                </div>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <!-- RESULTS -->
+
+    <section class="card">
+
+        <div class="card-title-row">
+
+            <span>
+                Validation Results
+            </span>
+
+            <button
+                id="exportBtn"
+                class="btn-success hidden"
+            >
+                Export Excel
+            </button>
+
+        </div>
+
+        <div
+            id="resultsContainer"
+            class="results-container"
+        >
+        </div>
+
+    </section>
+
+</div>
+
+<script type="module"
+        src="popup.js">
+</script>
+
+</body>
+</html>

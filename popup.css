@@ -1,0 +1,584 @@
+:root {
+
+    --bg: #f6f8fc;
+
+    --card: #ffffff;
+
+    --text: #1f2937;
+
+    --muted: #6b7280;
+
+    --primary: #7c9cff;
+
+    --primary-hover: #6f8fff;
+
+    --success: #87d7a3;
+
+    --danger: #f4a4a4;
+
+    --warning: #ffd79a;
+
+    --border: #e8edf5;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+
+    width: 650px;
+
+    margin: 0;
+
+    background: var(--bg);
+
+    font-family:
+        Inter,
+        Segoe UI,
+        sans-serif;
+
+    color: var(--text);
+}
+
+.app {
+
+    padding: 16px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 16px;
+}
+
+.header {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+}
+
+.eyebrow {
+
+    font-size: 11px;
+
+    letter-spacing: .12em;
+
+    color: var(--muted);
+
+    text-transform: uppercase;
+}
+
+h1 {
+
+    margin: 4px 0;
+
+    font-size: 24px;
+}
+
+.card {
+
+    background: white;
+
+    border-radius: 18px;
+
+    padding: 16px;
+
+    border: 1px solid var(--border);
+
+    box-shadow:
+      0 4px 16px rgba(0,0,0,.04);
+}
+
+.card-title {
+
+    font-weight: 700;
+
+    margin-bottom: 12px;
+}
+
+.card-title-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-bottom: 12px;
+}
+
+.prerequisites-card {
+
+    position: relative;
+}
+
+.prereq-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+}
+
+.small-icon-btn {
+
+    width: 32px;
+
+    height: 32px;
+
+    border: 1px solid var(--border);
+
+    font-weight: 700;
+}
+
+.tooltip-wrap {
+
+    position: relative;
+}
+
+.tooltip-panel {
+
+    display: none;
+
+    position: absolute;
+
+    top: 40px;
+
+    right: 0;
+
+    width: 360px;
+
+    padding: 14px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 12px;
+
+    background: white;
+
+    box-shadow:
+        0 12px 30px rgba(31,41,55,.18);
+
+    color: var(--text);
+
+    font-size: 12px;
+
+    line-height: 1.45;
+
+    z-index: 20;
+}
+
+.tooltip-panel p {
+
+    margin:
+        8px 0;
+}
+
+.tooltip-panel ol {
+
+    margin:
+        8px 0 0 18px;
+
+    padding: 0;
+}
+
+.tooltip-panel li {
+
+    margin-bottom: 6px;
+}
+
+.tooltip-wrap:hover .tooltip-panel,
+.tooltip-wrap:focus-within .tooltip-panel {
+
+    display: block;
+}
+
+.prereq-summary {
+
+    color: var(--muted);
+
+    font-size: 13px;
+
+    margin-bottom: 10px;
+}
+
+.prereq-list {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 8px;
+}
+
+.prereq-item {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    min-height: 36px;
+
+    padding: 8px 10px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    background: #fbfcff;
+
+    font-size: 13px;
+}
+
+.prereq-copy {
+
+    display: flex;
+
+    min-width: 0;
+
+    flex-direction: column;
+
+    gap: 2px;
+}
+
+.prereq-copy span {
+
+    font-weight: 600;
+}
+
+.prereq-copy small {
+
+    color: var(--muted);
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+}
+
+.signal {
+
+    width: 10px;
+
+    height: 10px;
+
+    border-radius: 50%;
+
+    flex: 0 0 auto;
+}
+
+.signal-unknown {
+
+    background: #cbd5e1;
+}
+
+.signal-checking {
+
+    background: var(--warning);
+}
+
+.signal-pass {
+
+    background: var(--success);
+}
+
+.signal-fail {
+
+    background: var(--danger);
+}
+
+.input {
+
+    width: 100%;
+
+    padding: 12px;
+
+    border-radius: 12px;
+
+    border: 1px solid var(--border);
+
+    margin-bottom: 10px;
+
+    background: white;
+}
+
+.grid-2 {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 10px;
+}
+
+.row {
+
+    margin-bottom: 10px;
+}
+
+.checkbox-wrap {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    color: var(--muted);
+}
+
+.badge {
+
+    padding: 6px 12px;
+
+    background:
+        rgba(124,156,255,.15);
+
+    border-radius: 999px;
+
+    font-size: 12px;
+}
+
+.selection-actions {
+
+    display: flex;
+
+    gap: 10px;
+
+    margin-bottom: 10px;
+}
+
+.assessment-list {
+
+    max-height: 280px;
+
+    overflow: auto;
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 8px;
+}
+
+.assessment-row {
+
+    padding: 12px;
+
+    border-radius: 12px;
+
+    border: 1px solid var(--border);
+
+    display: flex;
+
+    gap: 10px;
+
+    align-items: flex-start;
+}
+
+.assessment-meta {
+
+    flex: 1;
+}
+
+.asset-name {
+
+    font-weight: 600;
+}
+
+.asset-sub {
+
+    font-size: 12px;
+
+    color: var(--muted);
+
+    margin-top: 4px;
+}
+
+.btn-primary {
+
+    width: 100%;
+
+    border: 0;
+
+    padding: 14px;
+
+    border-radius: 14px;
+
+    background: var(--primary);
+
+    color: white;
+
+    cursor: pointer;
+
+    font-weight: 600;
+}
+
+.btn-primary:hover {
+
+    background:
+        var(--primary-hover);
+}
+
+.btn-secondary {
+
+    border: 1px solid var(--border);
+
+    background: white;
+
+    padding: 10px 12px;
+
+    border-radius: 10px;
+
+    cursor: pointer;
+}
+
+.btn-success {
+
+    border: 0;
+
+    background: var(--success);
+
+    padding: 10px 14px;
+
+    border-radius: 10px;
+
+    cursor: pointer;
+}
+
+.btn-danger {
+
+    background: #f4a4a4;
+
+    border: none;
+
+    padding: 12px;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+}
+
+.progress-bar {
+
+    width: 100%;
+
+    height: 12px;
+
+    background: #edf2f7;
+
+    border-radius: 999px;
+
+    overflow: hidden;
+
+    margin-top: 10px;
+}
+
+.progress-fill {
+
+    width: 0%;
+
+    height: 100%;
+
+    background: var(--primary);
+
+    transition: width .3s;
+}
+
+.progress-text {
+
+    font-size: 13px;
+
+    color: var(--muted);
+}
+
+.result-card {
+
+    padding: 14px;
+
+    border-radius: 14px;
+
+    border: 1px solid var(--border);
+
+    margin-bottom: 10px;
+}
+
+.result-header {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+}
+
+.score-pill {
+
+    padding: 6px 12px;
+
+    border-radius: 999px;
+
+    background:
+        rgba(135,215,163,.25);
+
+    font-weight: 600;
+}
+
+.result-meta {
+
+    margin-top: 8px;
+
+    color: var(--muted);
+
+    font-size: 13px;
+}
+
+.hidden {
+
+    display: none;
+}
+
+.icon-btn {
+
+    border: none;
+
+    background: white;
+
+    width: 42px;
+
+    height: 42px;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+}
+
+.checkpoint-results {
+    margin-top: 10px;
+}
+
+.checkpoint-results hr {
+    border: none;
+    border-top: 1px solid #e8edf5;
+    margin: 8px 0;
+}
+
+details {
+    margin-top: 10px;
+}
+
+summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
