@@ -1,6 +1,7 @@
 import {
     fail,
     getValues,
+    hasAnswer,
     includesValue,
     normalize,
     notApplicable,
@@ -69,6 +70,20 @@ const RP8 = {
             return notApplicable(
                 this.id,
                 "Hosting is None or Other."
+            );
+        }
+
+        // Case 1: CSIR-IntExtApp question is not present in the assessment at all — not applicable
+        if (
+            !hasAnswer(
+                context,
+                "CSIR-IntExtApp"
+            )
+        ) {
+
+            return notApplicable(
+                this.id,
+                "CSIR-Hosting is answered but CSIR-IntExtApp question was not found in this assessment."
             );
         }
 
