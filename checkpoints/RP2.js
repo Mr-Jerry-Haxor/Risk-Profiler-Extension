@@ -1,7 +1,9 @@
 import {
     fail,
     findValuesByKeyFragment,
+    getAnswer,
     getAnswers,
+    getQuestionSummary,
     hasAnswer,
     isWebLikeApplication,
     normalize,
@@ -28,6 +30,54 @@ const RP2 = {
                 "Application type is not Web application, Web service/API, or SaaS."
             );
         }
+
+        // Try to fetch collector values from CSIR-AppType surveyTemplateQuestionId
+        let apiUrls = [];
+        let fetchErrorMsg = "";
+        try {
+            const appTypeAnswer =
+                getAnswer(
+                    context,
+                    "CSIR-AppType"
+                );
+
+            const surveyTemplateQuestionId =
+                appTypeAnswer?.surveyTemplateQuestionId;
+
+            if (
+                surveyTemplateQuestionId
+            ) {
+
+                const summary =
+                    await getQuestionSummary(
+                        context,
+                        surveyTemplateQuestionId
+                    );
+
+                apiUrls =
+                    (summary?.collectedDataItems || [])
+                        .map(
+                            item =>
+                                item?.dataCollector?.collectorValue
+                        )
+                        .filter(Boolean);
+            }
+        } catch (error) {
+            fetchErrorMsg = error.message;
+            console.warn(
+                `Failed to fetch question summary in RP2: ${error.message}`
+            );
+        }
+
+        const apiUrlFound =
+            apiUrls.some(
+                url =>
+                    /^https?:\/\//i.test(
+                        String(
+                            url || ""
+                        ).trim()
+                    )
+            );
 
         const answerUrlFound =
             getAnswers(
@@ -73,14 +123,18 @@ const RP2 = {
                     )
             );
 
-        return answerUrlFound || detailUrlFound
+        return apiUrlFound || answerUrlFound || detailUrlFound
             ? pass(
                 this.id,
-                "Web-based application type selected and at least one URL was found."
+                `Web-based application type selected and at least one URL was found.${
+                    apiUrlFound ? ` (Found URLs: ${apiUrls.map(u => String(u).trim()).join(", ")})` : ""
+                }`
             )
             : fail(
                 this.id,
-                "Web-based application type selected, but no URL was found in assessment answers or details."
+                `Web-based application type selected, but no URL was found in assessment answers, details, or survey collector values.${
+                    fetchErrorMsg ? ` (Survey API fetch error: ${fetchErrorMsg})` : ""
+                }`
             );
     }
 };

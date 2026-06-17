@@ -1,3 +1,6 @@
+import { fetchJson } from "../api/requestManager.js";
+import { URLS } from "../utils/constants.js";
+
 export const STATUS = {
     PASS: "PASS",
     FAIL: "FAIL",
@@ -562,4 +565,34 @@ function walkNode(
                 visit
             )
     );
+}
+
+export async function getQuestionSummary(
+    context,
+    surveyTemplateQuestionId
+) {
+
+    const assessmentId =
+        context?.application?.assessmentId ||
+        context?.assessment?.assessmentId;
+
+    if (
+        !assessmentId ||
+        !surveyTemplateQuestionId
+    ) {
+
+        throw new Error(
+            "Assessment ID or Survey Template Question ID is missing"
+        );
+    }
+
+    const cairoOrigin =
+        new URL(
+            URLS.PRIMARY_ASSESSMENTS
+        ).origin;
+
+    const url =
+        `${cairoOrigin}/api/assessment/survey/${assessmentId}/question/${surveyTemplateQuestionId}`;
+
+    return fetchJson(url);
 }
