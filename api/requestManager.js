@@ -153,119 +153,53 @@ async function fetchFromTrustedPage(
 
             args: [
                 url,
-                useBearerToken
+                useBearerToken,
+                pageOrigin
             ],
 
             func:
                 async (
                     requestUrl,
-                    shouldUseBearerToken
+                    shouldUseBearerToken,
+                    pageOrigin
                 ) => {
 
-                    const JWT_PATTERN =
-                        /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+                    
 
-                    function decodeJwtPayload(token) {
-
+                    function normalizeToken(rawValue) {
+                        if (!rawValue) return null;
+                    
+                        let value = String(rawValue).trim();
+                    
+                        if (value.startsWith("Bearer ")) {
+                            value = value.slice(7).trim();
+                        }
+                    
                         try {
-
-                            const payload =
-                                token.split(".")[1];
-
-                            const normalized =
-                                payload
-                                    .replace(/-/g, "+")
-                                    .replace(/_/g, "/")
-                                    .padEnd(
-                                        Math.ceil(payload.length / 4) * 4,
-                                        "="
-                                    );
-
-                            return JSON.parse(
-                                atob(normalized)
-                            );
-
+                            const parsed = JSON.parse(value);
+                    
+                            if (typeof parsed === "string") {
+                                value = parsed.trim();
+                            } else if (parsed && typeof parsed === "object") {
+                                value =
+                                    parsed.esatsToken ||
+                                    parsed.access_token ||
+                                    parsed.token ||
+                                    parsed.value ||
+                                    value;
+                            }
                         } catch {
-
-                            return {};
+                            // ignore
                         }
+                    
+                        return value || null;
                     }
-
-                    function readStorageTokens(storage) {
-
-                        const tokens = [];
-
-                        for (
-                            let index = 0;
-                            index < storage.length;
-                            index++
-                        ) {
-
-                            const key =
-                                storage.key(index);
-
-                            const value =
-                                storage.getItem(key) || "";
-
-                            const matches =
-                                value.match(JWT_PATTERN) || [];
-
-                            matches.forEach(
-                                token =>
-                                    tokens.push({
-                                        key,
-                                        token
-                                    })
-                            );
-                        }
-
-                        return tokens;
-                    }
-
-                    const now =
-                        Math.floor(Date.now() / 1000);
-
-                    const candidates =
-                        shouldUseBearerToken
-                            ? [
-                                ...readStorageTokens(localStorage),
-                                ...readStorageTokens(sessionStorage)
-                            ]
-                                .map(candidate => ({
-                                    ...candidate,
-                                    payload:
-                                        decodeJwtPayload(
-                                            candidate.token
-                                        )
-                                }))
-                                .filter(
-                                    candidate =>
-                                        !candidate.payload.exp ||
-                                        candidate.payload.exp > now
-                                )
-                                .sort(
-                                    (
-                                        left,
-                                        right
-                                    ) => (
-                                        !!right.payload.unique_name -
-                                        !!left.payload.unique_name
-                                    ) ||
-                                        (
-                                            (right.key || "")
-                                                .toLowerCase()
-                                                .includes("token") -
-                                            (left.key || "")
-                                                .toLowerCase()
-                                                .includes("token")
-                                        ) ||
-                                        ((right.payload.exp || 0) -
-                                            (left.payload.exp || 0))
-                                )
-                            : [];
-
+                    
                     const token =
-                        candidates[0]?.token;
+                        shouldUseBearerToken
+                            ? normalizeToken(localStorage.getItem("esatsToken"))
+                            : null;
+                        
 
                     const headers = {
                         Accept:
@@ -283,17 +217,40 @@ async function fetchFromTrustedPage(
 
                     try {
 
-                        const response =
-                            await fetch(
-                                requestUrl,
-                                {
+                        const maxRetries = 3;
+                        const retryDelay = 1000;
+
+                        let response = null;
+                        let lastFetchError = null;
+
+                        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                            try {
+                                response = await fetch(requestUrl, {
+                                    method: "GET",
                                     headers,
-                                    credentials:
-                                        "include",
-                                    cache:
-                                        "no-store"
+                                    credentials: "omit",
+                                    cache: "no-store",
+                                    referrer: `${pageOrigin}/`,
+                                    referrerPolicy: "strict-origin-when-cross-origin"
+                                });
+                                
+                                if (response.ok) {
+                                    break;
                                 }
-                            );
+                                
+                                lastFetchError = new Error(`${response.status} ${response.statusText}`);
+                            } catch (error) {
+                                lastFetchError = error;
+                            }
+
+                            if (attempt < maxRetries) {
+                                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                            }
+                        }
+
+                        if (!response || !response.ok) {
+                            throw lastFetchError || new Error("Request failed");
+                        }
 
                         const text =
                             await response.text();
@@ -331,13 +288,16 @@ async function fetchFromTrustedPage(
 
                     } catch (error) {
 
+                        console.log("ESATS token:", token);
+                        console.log("Request URL:", requestUrl);
+                        console.log("Headers:", headers);
                         return {
                             ok:
                                 false,
                             status:
                                 0,
                             statusText:
-                                "Request failed",
+                                error.message || "Request failed",
                             hasAuthorization:
                                 shouldUseBearerToken
                                     ? !!token

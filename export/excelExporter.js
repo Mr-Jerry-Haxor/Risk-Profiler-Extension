@@ -169,6 +169,10 @@ function buildAllAssessmentsRows(
                 HEADER_STYLE
             ),
             cell(
+                "Attested By",
+                HEADER_STYLE
+            ),
+            cell(
                 "Passed",
                 HEADER_STYLE
             ),
@@ -223,6 +227,7 @@ function buildAllAssessmentsRows(
                 assessment.owningBusUnit,
                 assessment.surveyCompletedOn,
                 assessment.attestOn,
+                assessment.attestName,
                 summary.passed,
                 summary.failed,
                 summary.na,
@@ -289,6 +294,10 @@ function buildAssessmentRows(
         [
             "Attested On",
             assessment.attestOn
+        ],
+        [
+            "Attested By",
+            assessment.attestName
         ],
         [],
         [
@@ -565,7 +574,7 @@ function buildWorksheetXml(
             : "";
 
     return xml(
-        `<worksheet xmlns="${NS_MAIN}" xmlns:r="${NS_REL}" xmlns:mc="${NS_MARKUP}" mc:Ignorable="x14ac">
+        `<worksheet xmlns="${NS_MAIN}" xmlns:r="${NS_REL}" xmlns:mc="${NS_MARKUP}" >
             <sheetViews><sheetView workbookViewId="0"/></sheetViews>
             <sheetFormatPr defaultRowHeight="15"/>
             <sheetData>${rowXml}</sheetData>
