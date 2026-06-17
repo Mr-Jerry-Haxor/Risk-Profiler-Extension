@@ -10,7 +10,7 @@ from "./helpers.js";
 
 const RP6 = {
     id: "RP6",
-    name: "Code classification matches SaaS/GTC export-control reference",
+    name: "Code classification matches Export Control reference",
     category: "Information Types",
 
     async validate(context) {
@@ -32,10 +32,25 @@ const RP6 = {
         }
 
         const selectedCodes =
-            selectedClassifications.map(
-                classificationCode
-            );
+            selectedClassifications
+                .map(
+                    classificationCode
+                )
+                .filter(Boolean);
 
+        if (
+            selectedCodes.length === 0
+        ) {
+
+            return fail(
+                this.id,
+                `Unable to determine classification from answer: ${selectedClassifications.join(", ")}.`
+            );
+        }
+
+        /*
+         * Existing SaaS rule retained
+         */
         if (
             isSaas(
                 context
@@ -55,40 +70,48 @@ const RP6 = {
                 );
         }
 
-        const referenceCodes =
-            extractReferenceClassifications(
-                [
-                    context?.exportControl,
-                    context?.artifacts
-                ]
+        /*
+         * ESATS Export Control Group
+         *
+         * Values observed:
+         * EARL
+         * EARN
+         * ITAR
+         * null
+         */
+        const exportControlGroup =
+            context?.exportControl?.term?.associated?.[0]
+                ?.fields?.[0]
+                ?.field?.name;
+
+        const referenceCode =
+            mapExportControlClassification(
+                exportControlGroup
             );
 
         if (
-            referenceCodes.length === 0
+            !referenceCode
         ) {
 
             return notApplicable(
                 this.id,
-                "No GTC/JCD export-control reference classification was available for comparison."
+                `Unknown Export Control Group value: ${exportControlGroup}`
             );
         }
 
         const matches =
-            selectedCodes.some(
-                selected =>
-                    referenceCodes.includes(
-                        selected
-                    )
+            selectedCodes.includes(
+                referenceCode
             );
 
         return matches
             ? pass(
                 this.id,
-                `Selected classification matches GTC/JCD reference: ${selectedClassifications.join(", ")}.`
+                `Selected classification matches Export Control Group (${referenceCode}).`
             )
             : fail(
                 this.id,
-                `Selected classification (${selectedClassifications.join(", ")}) does not match GTC/JCD reference (${referenceCodes.join(", ")}).`
+                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control Group (${referenceCode}).`
             );
     }
 };
@@ -104,18 +127,7 @@ function classificationCode(
 
     if (
         normalized.includes(
-            "not subject"
-        )
-    ) {
-        return "NOT_SUBJECT";
-    }
-
-    if (
-        normalized.includes(
             "ear-nlr"
-        ) ||
-        normalized.includes(
-            "ear controlled, no license"
         )
     ) {
         return "EAR_NLR";
@@ -124,9 +136,6 @@ function classificationCode(
     if (
         normalized.includes(
             "ear-lr"
-        ) ||
-        normalized.includes(
-            "ear controlled, license"
         )
     ) {
         return "EAR_LR";
@@ -140,97 +149,65 @@ function classificationCode(
         return "ITAR";
     }
 
-    return normalized.toUpperCase();
-}
-
-function extractReferenceClassifications(
-    node
-) {
-
-    const textValues = [];
-
-    collectText(
-        node,
-        textValues
-    );
-
-    return [
-        ...new Set(
-            textValues
-                .map(
-                    classificationCode
-                )
-                .filter(code =>
-                    [
-                        "NOT_SUBJECT",
-                        "EAR_NLR",
-                        "EAR_LR",
-                        "ITAR"
-                    ].includes(
-                        code
-                    )
-                )
-        )
-    ];
-}
-
-function collectText(
-    node,
-    values
-) {
-
     if (
-        node === null ||
-        node === undefined
-    ) {
-        return;
-    }
-
-    if (
-        typeof node === "string" ||
-        typeof node === "number"
-    ) {
-
-        values.push(
-            String(
-                node
-            )
-        );
-
-        return;
-    }
-
-    if (
-        Array.isArray(
-            node
+        normalized.includes(
+            "not subject"
         )
     ) {
-
-        node.forEach(
-            item =>
-                collectText(
-                    item,
-                    values
-                )
-        );
-
-        return;
+        return "NOT_SUBJECT";
     }
 
+    return null;
+}
+
+function mapExportControlClassification(
+    value
+) {
+
+    const normalized =
+        normalize(
+            value
+        );
+
+    /*
+     * null export control group
+     * =>
+     * Not Subject to Export Controls
+     */
     if (
-        typeof node === "object"
+        !normalized
     ) {
-
-        Object.values(
-            node
-        ).forEach(
-            value =>
-                collectText(
-                    value,
-                    values
-                )
-        );
+        return "NOT_SUBJECT";
     }
+
+    /*
+     * EARL = EAR License Required
+     */
+    if (
+        normalized === "earl"
+    ) {
+        return "EAR_LR";
+    }
+
+    /*
+     * EARN = EAR No License Required
+     */
+    if (
+        normalized === "earn"
+    ) {
+        return "EAR_NLR";
+    }
+
+    /*
+     * ITAR
+     */
+    if (
+        normalized === "itar"
+    ) {
+        return "ITAR";
+    }
+
+    return null;
 }
 
 export default RP6;
