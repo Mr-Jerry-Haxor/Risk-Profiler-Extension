@@ -10,26 +10,36 @@ from "./helpers.js";
 
 const RP10 = {
     id: "RP10",
-    name: "Applications likely to need service accounts answer Yes",
+    name: "Applications requiring service accounts answer Yes",
     category: "Users",
 
     async validate(context) {
 
+        const databaseUsed =
+            isYes(
+                context,
+                "CSIR-Database"
+            );
+
         const serviceAccountExpected =
+            databaseUsed ||
+
             valueContainsAny(
                 context,
                 "CSIR-AppType",
                 [
                     "Web application",
                     "Web service",
-                    "Client-Server application",
-                    "Database / Data Warehouse / Data Mart",
-                    "Dashboard / BI"
+                    "API",
+                    "Client-Server",
+                    "Dashboard / BI",
+                    "PowerBI",
+                    "Cognos",
+                    "Tableau",
+                    "Database / Data Warehouse",
+                    "Data Mart",
+                    "Analytics platform"
                 ]
-            ) ||
-            isYes(
-                context,
-                "CSIR-Database"
             );
 
         if (
@@ -38,7 +48,7 @@ const RP10 = {
 
             return notApplicable(
                 this.id,
-                "Application type/database answers do not indicate expected service account usage."
+                "Application characteristics do not indicate required service account usage."
             );
         }
 
@@ -51,23 +61,34 @@ const RP10 = {
 
             return pass(
                 this.id,
-                "Service accounts are expected and CSIR-SvcAcct is Yes."
+                databaseUsed
+                    ? "Database usage is present and service accounts are identified."
+                    : "Application type indicates service account usage and CSIR-SvcAcct is Yes."
             );
         }
 
-        return includesValue(
-            context,
-            "CSIR-SvcAcct",
-            "No"
-        )
-            ? fail(
-                this.id,
-                "Service accounts are expected, but CSIR-SvcAcct is No."
+        if (
+            includesValue(
+                context,
+                "CSIR-SvcAcct",
+                "No"
             )
-            : fail(
+        ) {
+
+            return fail(
                 this.id,
-                "Service accounts are expected, but CSIR-SvcAcct is not answered."
+                databaseUsed
+                    ? "CSIR-Database is Yes, therefore service accounts are expected, but CSIR-SvcAcct is No."
+                    : "Application type indicates service account usage, but CSIR-SvcAcct is No."
             );
+        }
+
+        return fail(
+            this.id,
+            databaseUsed
+                ? "CSIR-Database is Yes, but CSIR-SvcAcct is not answered."
+                : "Application type indicates service account usage, but CSIR-SvcAcct is not answered."
+        );
     }
 };
 
