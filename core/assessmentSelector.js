@@ -27,7 +27,7 @@ export function filterAssessments(
                     results.filter(
                         item =>
                             regex.test(
-                                item.assetName
+                                item.assetName || ""
                             )
                     );
 
@@ -45,7 +45,7 @@ export function filterAssessments(
             results =
                 results.filter(
                     item =>
-                        item.assetName
+                        (item.assetName || "")
                             .toLowerCase()
                             .includes(text)
                 );
@@ -58,13 +58,14 @@ export function filterAssessments(
 
         results =
             results.filter(
-                item =>
-                    new Date(
-                        item.surveyCompletedOn
-                    ) >=
-                    new Date(
-                        filters.fromDate
-                    )
+                item => {
+
+                    const dateKey =
+                        getAssessmentDateKey(item);
+
+                    return !!dateKey &&
+                        dateKey >= filters.fromDate;
+                }
             );
     }
 
@@ -74,13 +75,14 @@ export function filterAssessments(
 
         results =
             results.filter(
-                item =>
-                    new Date(
-                        item.surveyCompletedOn
-                    ) <=
-                    new Date(
-                        filters.toDate
-                    )
+                item => {
+
+                    const dateKey =
+                        getAssessmentDateKey(item);
+
+                    return !!dateKey &&
+                        dateKey <= filters.toDate;
+                }
             );
     }
 
@@ -105,6 +107,52 @@ export function filterAssessments(
     }
 
     return results;
+}
+
+function getAssessmentDateKey(item) {
+
+    const value =
+        item.surveyCompletedOn ||
+        item.attestOn ||
+        item.raw?.surveyCompletedOn ||
+        item.raw?.attestOn;
+
+    if (
+        !value
+    ) {
+        return "";
+    }
+
+    const text =
+        String(value);
+
+    const isoDate =
+        text.match(
+            /^\d{4}-\d{2}-\d{2}/
+        );
+
+    if (
+        isoDate
+    ) {
+        return isoDate[0];
+    }
+
+    const date =
+        new Date(value);
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+        return "";
+    }
+
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+    ].join("-");
 }
 
 export function toggleSelection(

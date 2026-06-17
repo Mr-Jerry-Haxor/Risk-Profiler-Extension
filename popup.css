@@ -61,6 +61,26 @@ body {
     align-items: center;
 }
 
+.header-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+}
+
+.version-label {
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    font-weight: 600;
+
+    white-space: nowrap;
+}
+
 .eyebrow {
 
     font-size: 11px;
@@ -311,6 +331,26 @@ h1 {
     background: white;
 }
 
+.field-label {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 6px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    font-weight: 600;
+}
+
+.field-label .input {
+
+    margin-bottom: 10px;
+}
+
 .grid-2 {
 
     display: grid;
@@ -356,6 +396,15 @@ h1 {
     gap: 10px;
 
     margin-bottom: 10px;
+}
+
+.results-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
 }
 
 .assessment-list {

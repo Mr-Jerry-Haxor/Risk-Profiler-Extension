@@ -21,10 +21,18 @@
             </h1>
         </div>
 
-        <button id="refreshBtn"
-                class="icon-btn">
-            ↻
-        </button>
+        <div class="header-actions">
+
+            <span class="version-label">
+                Quality control List version : 2.5
+            </span>
+
+            <button id="refreshBtn"
+                    class="icon-btn">
+                ↻
+            </button>
+
+        </div>
 
     </header>
 
@@ -172,17 +180,31 @@
 
         <div class="grid-2">
 
-            <input
-                type="date"
-                id="fromDate"
-                class="input"
-            >
+            <label class="field-label">
+                <span>
+                    From Date
+                </span>
 
-            <input
-                type="date"
-                id="toDate"
-                class="input"
-            >
+                <input
+                    type="date"
+                    id="fromDate"
+                    class="input"
+                >
+
+            </label>
+
+            <label class="field-label">
+                <span>
+                    To Date
+                </span>
+
+                <input
+                    type="date"
+                    id="toDate"
+                    class="input"
+                >
+
+            </label>
 
         </div>
 
@@ -325,12 +347,23 @@
                 Validation Results
             </span>
 
-            <button
-                id="exportBtn"
-                class="btn-success hidden"
-            >
-                Export Excel
-            </button>
+            <div class="results-actions">
+
+                <button
+                    id="clearResultsBtn"
+                    class="btn-secondary hidden"
+                >
+                    Clear Results
+                </button>
+
+                <button
+                    id="exportBtn"
+                    class="btn-success hidden"
+                >
+                    Export Excel
+                </button>
+
+            </div>
 
         </div>
 

@@ -211,6 +211,12 @@ function attachEvents() {
             retryFailedAssessments
         );
 
+    $("clearResultsBtn")
+        ?.addEventListener(
+            "click",
+            clearValidationResults
+        );
+
     $("exportBtn")
         ?.addEventListener(
             "click",
@@ -646,6 +652,11 @@ function startProgressPolling() {
                         "hidden"
                     );
 
+                $("clearResultsBtn")
+                    ?.classList.remove(
+                        "hidden"
+                    );
+
                 $("cancelBtn")
                     ?.classList.add(
                         "hidden"
@@ -724,6 +735,13 @@ function renderResults(
         $("resultsContainer");
 
     container.innerHTML = "";
+
+    if (
+        !results ||
+        results.length === 0
+    ) {
+        return;
+    }
 
     results.forEach(
         result => {
@@ -1049,6 +1067,11 @@ async function loadExistingResults() {
             ?.classList.remove(
                 "hidden"
             );
+
+        $("clearResultsBtn")
+            ?.classList.remove(
+                "hidden"
+            );
     }
 
     const failed =
@@ -1063,6 +1086,52 @@ async function loadExistingResults() {
                 "hidden"
             );
     }
+}
+
+async function clearValidationResults() {
+
+    await chrome.runtime.sendMessage({
+
+        action:
+            "CLEAR_RESULTS"
+    });
+
+    validationResults = [];
+
+    renderResults(
+        validationResults
+    );
+
+    $("exportBtn")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("clearResultsBtn")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("retryFailedBtn")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("cancelBtn")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("progressContainer")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("progressFill").style.width =
+        "0%";
+
+    $("progressText").textContent =
+        "Starting...";
 }
 
 async function retryFailedAssessments() {
