@@ -124,6 +124,21 @@ async function refreshAssessments() {
                     attestOn:
                         item.attestOn,
 
+                    attestName:
+                        item.attestName,
+
+                    attestId:
+                        item.attestId,
+
+                    incompleteInitiatedOn:
+                        item.incompleteInitiatedOn,
+
+                    incompleteInitiatedById:
+                        item.incompleteInitiatedById,
+
+                    incompleteInitiatedByName:
+                        item.incompleteInitiatedByName,
+
                     appMgrName:
                         item.appMgrName,
 

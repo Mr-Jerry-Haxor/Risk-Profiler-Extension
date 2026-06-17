@@ -85,14 +85,22 @@ export function filterAssessments(
     }
 
     if (
-        filters.lifeCycle
+        filters.assessmentStatus
     ) {
 
         results =
             results.filter(
-                item =>
-                    item.lifeCycle ===
-                    filters.lifeCycle
+                item => {
+
+                    const isIncomplete =
+                        !!item.incompleteAssessmentId ||
+                        !!item.hasIncomplete;
+
+                    return filters.assessmentStatus ===
+                        "incomplete"
+                        ? isIncomplete
+                        : !isIncomplete;
+                }
             );
     }
 

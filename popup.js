@@ -150,7 +150,7 @@ function attachEvents() {
             applyFilters
         );
 
-    $("lifeCycleFilter")
+    $("assessmentStatusFilter")
         ?.addEventListener(
             "change",
             applyFilters
@@ -244,8 +244,8 @@ function applyFilters() {
             $("toDate")
                 ?.value || "",
 
-        lifeCycle:
-            $("lifeCycleFilter")
+        assessmentStatus:
+            $("assessmentStatusFilter")
                 ?.value || ""
     };
 
@@ -287,13 +287,18 @@ function renderAssessments() {
     filteredAssessments.forEach(
         assessment => {
 
+            const status =
+                getAssessmentStatus(
+                    assessment
+                );
+
             const row =
                 document.createElement(
                     "div"
                 );
 
             row.className =
-                "assessment-row";
+                `assessment-row ${status.className}`;
 
             row.innerHTML = `
 
@@ -315,6 +320,10 @@ function renderAssessments() {
 
                         ${assessment.assetName}
 
+                        <span class="status-pill ${status.className}">
+                            ${status.label}
+                        </span>
+
                     </div>
 
                     <div class="asset-sub">
@@ -332,6 +341,12 @@ function renderAssessments() {
 
                     </div>
 
+                    <div class="asset-sub status-detail">
+
+                        ${status.detail}
+
+                    </div>
+
                 </div>
 
             `;
@@ -345,6 +360,89 @@ function renderAssessments() {
     bindCheckboxes();
 
     updateSelectedCount();
+}
+
+function getAssessmentStatus(
+    assessment
+) {
+
+    const isIncomplete =
+        !!assessment.incompleteAssessmentId ||
+        !!assessment.hasIncomplete;
+
+    if (
+        isIncomplete
+    ) {
+
+        const initiatedBy =
+            assessment.incompleteInitiatedByName ||
+            assessment.raw?.incompleteInitiatedByName ||
+            "N/A";
+
+        const initiatedOn =
+            assessment.incompleteInitiatedOn ||
+            assessment.raw?.incompleteInitiatedOn;
+
+        return {
+            label:
+                "Incomplete",
+            className:
+                "status-incomplete",
+            detail:
+                `Incomplete mark • Initiated by ${initiatedBy}${initiatedOn
+                    ? ` • ${formatDate(initiatedOn)}`
+                    : ""}`
+        };
+    }
+
+    const attestName =
+        assessment.attestName ||
+        assessment.raw?.attestName ||
+        "N/A";
+
+    const attestOn =
+        assessment.attestOn ||
+        assessment.raw?.attestOn;
+
+    return {
+        label:
+            "Completed",
+        className:
+            "status-completed",
+        detail:
+            `Attested by ${attestName}${attestOn
+                ? ` • ${formatDate(attestOn)}`
+                : ""}`
+    };
+}
+
+function formatDate(
+    value
+) {
+
+    const date =
+        new Date(value);
+
+    if (
+        Number.isNaN(
+            date.getTime()
+        )
+    ) {
+
+        return value;
+    }
+
+    return date.toLocaleDateString(
+        undefined,
+        {
+            year:
+                "numeric",
+            month:
+                "short",
+            day:
+                "2-digit"
+        }
+    );
 }
 
 function bindCheckboxes() {
