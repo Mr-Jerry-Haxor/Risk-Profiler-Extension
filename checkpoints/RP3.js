@@ -3,7 +3,8 @@ import {
     includesValue,
     isWebLikeApplication,
     notApplicable,
-    pass
+    pass,
+    valueContainsAny
 }
 from "./helpers.js";
 
@@ -31,16 +32,36 @@ const RP3 = {
             );
         }
 
-        return isWebLikeApplication(
-            context
-        )
-            ? pass(
+        if (
+            isWebLikeApplication(
+                context
+            )
+        ) {
+
+            return pass(
                 this.id,
                 "WSSO is selected and the application type is web-based."
+            );
+        }
+
+        // Non-web app type with WSSO — check if Boeing holds the IP
+        const boeingOwnsIp =
+            valueContainsAny(
+                context,
+                "CSIR-IPOwner",
+                [
+                    "Boeing"
+                ]
+            );
+
+        return boeingOwnsIp
+            ? pass(
+                this.id,
+                "WSSO is selected and the application's intellectual property is Boeing-owned."
             )
             : fail(
                 this.id,
-                "WSSO is selected, but the application type is not Web application, Web service/API, or SaaS."
+                "WSSO is selected, but the application type is not Web application, Web service/API, or SaaS, and IP is not Boeing-owned."
             );
     }
 };
