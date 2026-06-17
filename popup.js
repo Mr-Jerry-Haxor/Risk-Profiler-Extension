@@ -25,6 +25,8 @@ let selectedAssessmentIds = [];
 
 let validationResults = [];
 
+let resultsRendered = false;
+
 /*
 ====================================================
 DOM HELPERS
@@ -347,6 +349,16 @@ function renderAssessments() {
 
                     </div>
 
+                    <div class="asset-sub date-info">
+
+                        <strong>Assessed date:</strong> ${formatDate(assessment.attestOn || assessment.raw?.attestOn) || "N/A"}
+
+                        •
+
+                        <strong>Survey completed date:</strong> ${formatDate(assessment.surveyCompletedOn || assessment.raw?.surveyCompletedOn) || "N/A"}
+
+                    </div>
+
                     <div class="asset-sub status-detail">
 
                         ${status.detail}
@@ -425,6 +437,10 @@ function getAssessmentStatus(
 function formatDate(
     value
 ) {
+
+    if (!value) {
+        return "";
+    }
 
     const date =
         new Date(value);
@@ -579,6 +595,8 @@ async function startValidation() {
         return;
     }
 
+    resultsRendered = false;
+
     $("progressContainer")
         ?.classList.remove(
             "hidden"
@@ -637,7 +655,7 @@ function startProgressPolling() {
             }
 
             if (
-                data.validationComplete
+                data.validationComplete && !resultsRendered
             ) {
 
                 validationResults =
@@ -646,6 +664,8 @@ function startProgressPolling() {
                 renderResults(
                     validationResults
                 );
+
+                resultsRendered = true;
 
                 $("exportBtn")
                     ?.classList.remove(
@@ -1063,6 +1083,8 @@ async function loadExistingResults() {
             validationResults
         );
 
+        resultsRendered = true;
+
         $("exportBtn")
             ?.classList.remove(
                 "hidden"
@@ -1101,6 +1123,8 @@ async function clearValidationResults() {
     renderResults(
         validationResults
     );
+
+    resultsRendered = false;
 
     $("exportBtn")
         ?.classList.add(
@@ -1144,6 +1168,8 @@ async function retryFailedAssessments() {
     ) {
         return;
     }
+
+    resultsRendered = false;
 
     $("progressContainer")
         ?.classList.remove(
