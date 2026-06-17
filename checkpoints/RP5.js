@@ -1,17 +1,16 @@
 import {
     fail,
     getValues,
-    includesValue,
     normalize,
-    notApplicable,
     pass,
+    notApplicable,
     valueContainsAny
 }
 from "./helpers.js";
 
 const RP5 = {
     id: "RP5",
-    name: "Applicable MFA has personal information data type selected",
+    name: "MFA applications should identify personal information data",
     category: "Information Types",
 
     async validate(context) {
@@ -25,17 +24,11 @@ const RP5 = {
         const mfaApplicable =
             mfaValues.some(
                 value =>
-                    normalize(
-                        value
-                    ) !==
-                    normalize(
-                        "Not Applicable"
-                    )
+                    normalize(value) !==
+                    normalize("Not Applicable")
             );
 
-        if (
-            !mfaApplicable
-        ) {
+        if (!mfaApplicable) {
 
             return notApplicable(
                 this.id,
@@ -43,38 +36,29 @@ const RP5 = {
             );
         }
 
-        const hasPersonalInformation =
+        const containsPII =
             valueContainsAny(
                 context,
                 "CSIR-Data",
                 [
                     "Personally Identifiable Information",
-                    "Personal Information"
-                ]
-            ) ||
-            includesValue(
-                context,
-                "CSIR-Data-PII",
-                "Yes"
-            ) ||
-            valueContainsAny(
-                context,
-                "CSIR-Data-PII-Type",
-                [
-                    "Non-Sensitive Personal Information",
-                    "Sensitive Personal Information"
+                    "Personal Information",
+                    "IPSM 2.2.9"
                 ]
             );
 
-        return hasPersonalInformation
-            ? pass(
+        if (containsPII) {
+
+            return pass(
                 this.id,
-                "MFA is applicable and personal information data type is selected."
-            )
-            : fail(
-                this.id,
-                "MFA is applicable, but personal information/NSPII data type is not selected."
+                "MFA is applicable and CSIR-Data includes Personally Identifiable Information / Personal Information."
             );
+        }
+
+        return fail(
+            this.id,
+            "MFA is applicable, but CSIR-Data does not include Personally Identifiable Information / Personal Information (IPSM 2.2.9)."
+        );
     }
 };
 
