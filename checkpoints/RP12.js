@@ -11,6 +11,10 @@ const RP12 = {
     id: "RP12",
     name: "Nonperson accounts are restricted to authorized purpose",
     category: "SCR",
+    requiredQuestions: [
+    "CSIR-SvcAcct",
+    "CSIR-SCR-NonpersonAcct-Restricted"
+    ],
 
     async validate(context) {
 

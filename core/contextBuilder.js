@@ -64,6 +64,13 @@ export async function buildContext(
         answers:
             cairo.answers,
 
+        surveyQuestions:
+            cairo.surveyQuestions || [],
+
+        questionMap:
+            cairo.questionMap ||
+            new Map(),
+
         reviewSummary:
             review,
 

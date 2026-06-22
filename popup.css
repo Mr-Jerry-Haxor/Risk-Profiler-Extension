@@ -676,3 +676,47 @@ summary {
     font-weight: 600;
 }
 
+.checkpoint-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed var(--border);
+}
+
+.checkpoint-results-header span {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.75px;
+    color: var(--muted);
+}
+
+.download-context-btn {
+    border: 1px solid var(--border);
+    background: white;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    border-radius: 6px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.download-context-btn:hover {
+    background: var(--bg);
+    color: var(--text);
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.download-context-btn:active {
+    transform: translateY(0);
+}
+

@@ -50,25 +50,79 @@ export async function getAssessmentAnswers(
     return fetchJson(url);
 }
 
+export async function getSurveyQuestions(
+    surveyTemplateId
+) {
+
+    if (
+        !surveyTemplateId
+    ) {
+
+        return [];
+    }
+
+    const url =
+        `https://cairois.web.boeing.com/api/survey/template/${surveyTemplateId}/questions`;
+
+    return fetchJson(url);
+}
+
 export async function getAssessmentContext(
     assessmentId
 ) {
 
+    const detail =
+        await getAssessmentDetail(
+            assessmentId
+        );
+
+    const surveyTemplateId =
+        detail?.surveyTemplateId;
+
     const [
-        detail,
-        answers
+        answers,
+        surveyQuestions
     ] =
     await Promise.all([
-        getAssessmentDetail(
-            assessmentId
-        ),
+
         getAssessmentAnswers(
             assessmentId
+        ),
+
+        getSurveyQuestions(
+            surveyTemplateId
         )
     ]);
 
+    const questionMap =
+        new Map(
+
+            (surveyQuestions || [])
+
+                .filter(
+                    question =>
+                        question?.alternateQuestionId
+                )
+
+                .map(
+                    question => [
+
+                        question.alternateQuestionId,
+
+                        question
+                    ]
+                )
+        );
+
     return {
+
         detail,
-        answers
+
+        answers,
+
+        surveyQuestions:
+            surveyQuestions || [],
+
+        questionMap
     };
 }

@@ -596,3 +596,36 @@ export async function getQuestionSummary(
 
     return fetchJson(url);
 }
+
+export function questionExists(
+    context,
+    questionId
+) {
+
+    return Boolean(
+        context?.questionMap?.has(
+            questionId
+        )
+    );
+}
+
+export function getSurveyQuestion(
+    context,
+    questionId
+) {
+
+    return context?.questionMap?.get(
+        questionId
+    );
+}
+
+export function missingQuestionResult(
+    checkpointId,
+    questionId
+) {
+
+    return notApplicable(
+        checkpointId,
+        `Question identifier was not found in the survey questions. (${questionId})`
+    );
+}

@@ -46,6 +46,10 @@ const RP9 = {
     id: "RP9",
     name: "Developer person classifications are represented in person class",
     category: "Users",
+    requiredQuestions: [
+    "CSIR-DevPersonClassification",
+    "CSIR-PersonClass"
+    ],
 
     async validate(context) {
 

@@ -12,6 +12,10 @@ const RP10 = {
     id: "RP10",
     name: "Applications requiring service accounts answer Yes",
     category: "Users",
+    requiredQuestions: [
+    "CSIR-AppType",
+    "CSIR-SvcAcct"
+    ],
 
     async validate(context) {
 

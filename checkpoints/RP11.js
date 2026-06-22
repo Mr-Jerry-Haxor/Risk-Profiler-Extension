@@ -11,6 +11,10 @@ const RP11 = {
     id: "RP11",
     name: "Nonperson accounts are removed/disabled when not required",
     category: "SCR",
+    requiredQuestions: [
+    "CSIR-SvcAcct",
+    "CSIR-SCR-NonpersonAcct-Disable"
+    ],
 
     async validate(context) {
 

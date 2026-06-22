@@ -12,6 +12,10 @@ const RP5 = {
     id: "RP5",
     name: "MFA applications should identify personal information data",
     category: "Information Types",
+    requiredQuestions: [
+    "CSIR-MFA",
+    "CSIR-Data"
+    ],
 
     async validate(context) {
 

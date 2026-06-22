@@ -50,6 +50,10 @@ const RP4 = {
     id: "RP4",
     name: "Installed/deployed applications have a valid device count",
     category: "Architecture Overview",
+    requiredQuestions: [
+    "CSIR-AppType",
+    "CSIR-DeviceCount"
+    ],
 
     async validate(context) {
 

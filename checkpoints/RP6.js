@@ -10,8 +10,14 @@ from "./helpers.js";
 
 const RP6 = {
     id: "RP6",
+
     name: "Code classification matches Export Control reference",
+
     category: "Information Types",
+
+    requiredQuestions: [
+        "CSIR-CodeClassification"
+    ],
 
     async validate(context) {
 
@@ -49,7 +55,8 @@ const RP6 = {
         }
 
         /*
-         * Existing SaaS rule retained
+         * SaaS applications must be
+         * Not Subject to Export Controls
          */
         if (
             isSaas(
@@ -71,18 +78,13 @@ const RP6 = {
         }
 
         /*
-         * ESATS Export Control Group
-         *
-         * Values observed:
-         * EARL
-         * EARN
-         * ITAR
-         * null
+         * Export Control Group from ESATS/GTC
          */
         const exportControlGroup =
             context?.exportControl?.term?.associated?.[0]
                 ?.fields?.[0]
-                ?.field?.name;
+                ?.field?.name ||
+            null;
 
         const referenceCode =
             mapExportControlClassification(
@@ -95,7 +97,7 @@ const RP6 = {
 
             return notApplicable(
                 this.id,
-                `Unknown Export Control Group value: ${exportControlGroup}`
+                `Unknown Export Control Group value: ${exportControlGroup || "null"}`
             );
         }
 
@@ -170,9 +172,8 @@ function mapExportControlClassification(
         );
 
     /*
-     * null export control group
-     * =>
-     * Not Subject to Export Controls
+     * No export control group
+     * => Not Subject
      */
     if (
         !normalized
@@ -181,7 +182,7 @@ function mapExportControlClassification(
     }
 
     /*
-     * EARL = EAR License Required
+     * EAR License Required
      */
     if (
         normalized === "earl"
@@ -190,7 +191,7 @@ function mapExportControlClassification(
     }
 
     /*
-     * EARN = EAR No License Required
+     * EAR No License Required
      */
     if (
         normalized === "earn"

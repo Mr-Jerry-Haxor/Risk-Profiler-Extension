@@ -16,6 +16,9 @@ const RP2 = {
     id: "RP2",
     name: "Web application, web service, or SaaS has at least one URL",
     category: "Architecture Overview",
+    requiredQuestions: [
+    "CSIR-AppType"
+    ],
 
     async validate(context) {
 

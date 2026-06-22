@@ -13,6 +13,13 @@ const RP7 = {
     id: "RP7",
     name: "Export Controlled = Yes has EAR/ITAR data type selected",
     category: "Information Types",
+    requiredQuestions: [
+    "CSIR-ExportControlled",
+    "CSIR-ExportControlled-Jurisdiction",
+    "CSIR-USEC-EAR-NLR",
+    "CSIR-USEC-EAR-LR",
+    "CSIR-USEC-ITAR"
+    ],
 
     async validate(context) {
 

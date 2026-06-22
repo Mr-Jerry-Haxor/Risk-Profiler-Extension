@@ -114,8 +114,10 @@ function getAssessmentDateKey(item) {
     const value =
         item.surveyCompletedOn ||
         item.attestOn ||
+        item.incompleteInitiatedOn ||
         item.raw?.surveyCompletedOn ||
-        item.raw?.attestOn;
+        item.raw?.attestOn ||
+        item.raw?.incompleteInitiatedOn;
 
     if (
         !value

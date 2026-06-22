@@ -12,6 +12,10 @@ const RP3 = {
     id: "RP3",
     name: "MFA via WSSO is used only with web-based application types",
     category: "Architecture Overview",
+    requiredQuestions: [
+    "CSIR-MFA",
+    "CSIR-AppType"
+    ],
 
     async validate(context) {
 

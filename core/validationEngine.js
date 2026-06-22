@@ -8,6 +8,11 @@ import {
 }
 from "./scoreCalculator.js";
 
+import {
+    questionExists
+}
+from "../checkpoints/helpers.js";
+
 export async function runValidation(
     context
 ) {
@@ -21,17 +26,53 @@ export async function runValidation(
 
         try {
 
+            const requiredQuestions =
+                checkpoint.requiredQuestions ||
+                [];
+
+            const missingQuestion =
+                requiredQuestions.find(
+                    questionId =>
+                        !questionExists(
+                            context,
+                            questionId
+                        )
+                );
+
+            if (
+                missingQuestion
+            ) {
+
+                results.push({
+
+                    id:
+                        checkpoint.id,
+
+                    status:
+                        "NA",
+
+                    reason:
+                        "Question identifier was not found in the survey questions."
+                });
+
+                continue;
+            }
+
             const result =
-                await checkpoint
-                    .validate(
-                        context
-                    );
+                await checkpoint.validate(
+                    context
+                );
 
             results.push(
                 result
             );
 
         } catch (error) {
+
+            console.error(
+                `${checkpoint.id} failed`,
+                error
+            );
 
             results.push({
 
@@ -42,7 +83,8 @@ export async function runValidation(
                     "FAIL",
 
                 reason:
-                    error.message
+                    error?.message ||
+                    "Unknown validation error"
             });
         }
     }

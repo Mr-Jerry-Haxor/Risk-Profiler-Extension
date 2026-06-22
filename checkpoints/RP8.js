@@ -31,6 +31,10 @@ const RP8 = {
     id: "RP8",
     name: "Hosting selection matches internal/external/hybrid architecture",
     category: "Network and Hosting",
+    requiredQuestions: [
+    "CSIR-Hosting",
+    "CSIR-IntExtApp"
+    ],
 
     async validate(context) {
 
