@@ -799,6 +799,10 @@ function renderResults(
             card.className =
                 "result-card";
 
+            const hasMissingQuestionError = result.results && result.results.some(
+                rule => rule.reason === "Question identifier was not found in the survey questions."
+            );
+
             card.innerHTML = `
 
                 <div class="result-header">
@@ -816,6 +820,7 @@ function renderResults(
                             : "Error"}
 
                     </span>
+                    ${hasMissingQuestionError ? `<span class="score-error-indicator" title="Question identifier was not found in the survey questions.">! Error</span>` : ""}
 
                 </div>
 
@@ -870,7 +875,7 @@ function renderResults(
                         ${result.results.map(
                             rule => `
 
-                            <div>
+                            <div${rule.reason === "Question identifier was not found in the survey questions." ? ' class="rule-error-missing"' : ""}>
 
                                 <strong>
                                     ${rule.id}

@@ -209,6 +209,13 @@ function buildAllAssessmentsRows(
             const summary =
                 result.summary || {};
 
+            const missingQuestionRps = (result.results || [])
+                .filter(r => r.reason === "Question identifier was not found in the survey questions.")
+                .map(r => r.id)
+                .join(", ");
+
+            const errorText = missingQuestionRps ? `Missing Questions: ${missingQuestionRps}` : (result.error || "");
+
             rows.push([
 
                 cell(
@@ -234,7 +241,7 @@ function buildAllAssessmentsRows(
                 formatScore(
                     summary.score
                 ),
-                result.error || ""
+                errorText
             ]);
         }
     );
@@ -367,11 +374,14 @@ function buildAssessmentRows(
         result.results || []
     ).forEach(rule => {
 
+        const isMissing = rule.reason === "Question identifier was not found in the survey questions.";
+        const rowStyle = isMissing ? 3 : 0;
+
         rows.push([
 
-            rule.id,
-            rule.status,
-            rule.reason
+            cell(rule.id, rowStyle),
+            cell(rule.status, rowStyle),
+            cell(rule.reason, rowStyle)
         ]);
     });
 
@@ -531,17 +541,19 @@ function buildStylesXml() {
                 <font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
                 <font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/><family val="2"/></font>
             </fonts>
-            <fills count="3">
+            <fills count="4">
                 <fill><patternFill patternType="none"/></fill>
                 <fill><patternFill patternType="gray125"/></fill>
                 <fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill>
+                <fill><patternFill patternType="solid"><fgColor rgb="FFF8D7DA"/><bgColor indexed="64"/></patternFill></fill>
             </fills>
             <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
             <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-            <cellXfs count="3">
+            <cellXfs count="4">
                 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
                 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
                 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+                <xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>
             </cellXfs>
             <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
         </styleSheet>`

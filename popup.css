@@ -720,3 +720,17 @@ summary {
     transform: translateY(0);
 }
 
+.rule-error-missing {
+    background-color: #f8d7da;
+    color: #842029;
+    padding: 6px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.score-error-indicator {
+    color: #dc3545;
+    font-size: 12px;
+    margin-left: 8px;
+    font-weight: 600;
+}
