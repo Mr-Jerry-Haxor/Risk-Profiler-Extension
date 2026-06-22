@@ -77,18 +77,9 @@ const RP6 = {
                 );
         }
 
-        /*
-         * Export Control Group from ESATS/GTC
-         */
-        const exportControlGroup =
-            context?.exportControl?.term?.associated?.[0]
-                ?.fields?.[0]
-                ?.field?.name ||
-            null;
-
         const referenceCode =
-            mapExportControlClassification(
-                exportControlGroup
+            extractReferenceClassification(
+                context?.exportControl
             );
 
         if (
@@ -97,7 +88,7 @@ const RP6 = {
 
             return notApplicable(
                 this.id,
-                `Unknown Export Control Group value: ${exportControlGroup || "null"}`
+                "Unable to determine Export Control classification from GTC."
             );
         }
 
@@ -109,11 +100,11 @@ const RP6 = {
         return matches
             ? pass(
                 this.id,
-                `Selected classification matches Export Control Group (${referenceCode}).`
+                `Selected classification matches Export Control reference (${referenceCode}).`
             )
             : fail(
                 this.id,
-                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control Group (${referenceCode}).`
+                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control reference (${referenceCode}).`
             );
     }
 };
@@ -129,7 +120,18 @@ function classificationCode(
 
     if (
         normalized.includes(
+            "not subject"
+        )
+    ) {
+        return "NOT_SUBJECT";
+    }
+
+    if (
+        normalized.includes(
             "ear-nlr"
+        ) ||
+        normalized.includes(
+            "ear or ear-nlr"
         )
     ) {
         return "EAR_NLR";
@@ -151,11 +153,107 @@ function classificationCode(
         return "ITAR";
     }
 
+    return null;
+}
+
+function extractReferenceClassification(
+    exportControl
+) {
+
+    const record =
+        exportControl?.[0];
+
+    const term =
+        record?.terms?.[0]?.term;
+
     if (
-        normalized.includes(
+        !term
+    ) {
+        return null;
+    }
+
+    /*
+     * Primary source:
+     * Export Control Group
+     *
+     * EARL
+     * EARN
+     * ITAR
+     */
+    const exportControlGroup =
+        (term?.associated || [])
+            .flatMap(
+                association =>
+                    association?.fields || []
+            )
+            .map(
+                field =>
+                    field?.field?.name
+            )
+            .find(
+                value =>
+                    [
+                        "EARL",
+                        "EARN",
+                        "ITAR"
+                    ].includes(
+                        String(
+                            value || ""
+                        ).toUpperCase()
+                    )
+            );
+
+    if (
+        exportControlGroup
+    ) {
+
+        return mapExportControlClassification(
+            exportControlGroup
+        );
+    }
+
+    /*
+     * NSR
+     */
+    const displayName =
+        term?.displayName;
+
+    if (
+        normalize(
+            displayName
+        ) === "nsr"
+    ) {
+
+        return "NOT_SUBJECT";
+    }
+
+    /*
+     * Export Control Group Full Name
+     *
+     * Not Subject to EAR or ITAR
+     */
+    const equivalenceText =
+        (term?.equivalence || [])
+            .flatMap(
+                item =>
+                    item?.fields || []
+            )
+            .map(
+                field =>
+                    field?.field?.name || ""
+            )
+            .join(
+                " "
+            );
+
+    if (
+        normalize(
+            equivalenceText
+        ).includes(
             "not subject"
         )
     ) {
+
         return "NOT_SUBJECT";
     }
 
@@ -171,37 +269,18 @@ function mapExportControlClassification(
             value
         );
 
-    /*
-     * No export control group
-     * => Not Subject
-     */
-    if (
-        !normalized
-    ) {
-        return "NOT_SUBJECT";
-    }
-
-    /*
-     * EAR License Required
-     */
     if (
         normalized === "earl"
     ) {
         return "EAR_LR";
     }
 
-    /*
-     * EAR No License Required
-     */
     if (
         normalized === "earn"
     ) {
         return "EAR_NLR";
     }
 
-    /*
-     * ITAR
-     */
     if (
         normalized === "itar"
     ) {
