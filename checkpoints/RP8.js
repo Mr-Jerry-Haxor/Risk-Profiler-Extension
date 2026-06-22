@@ -5,6 +5,7 @@ import {
     includesValue,
     normalize,
     notApplicable,
+    valueContainsAny,
     pass
 }
 from "./helpers.js";
@@ -91,19 +92,33 @@ const RP8 = {
             );
         }
 
-        const hasExternal =
+        const hasExternalHosting =
             hosting.some(
                 value =>
                     EXTERNAL_HOSTS.some(
                         host =>
-                            normalize(
-                                value
-                            ) ===
-                            normalize(
-                                host
-                            )
+                            normalize(value) ===
+                            normalize(host)
                     )
             );
+
+        const hasExternalAppType =
+            valueContainsAny(
+                context,
+                "CSIR-AppType",
+                [
+                    "Software-as-a-Service",
+                    "SaaS",
+                    "Infrastructure-as-a-Service",
+                    "IaaS",
+                    "Platform-as-a-Service",
+                    "PaaS"
+                ]
+            );
+
+        const hasExternal =
+            hasExternalHosting ||
+            hasExternalAppType;
 
         const hasInternal =
             hosting.some(

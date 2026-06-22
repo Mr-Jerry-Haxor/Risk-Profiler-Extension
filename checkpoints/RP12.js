@@ -1,6 +1,6 @@
 import {
     fail,
-    includesAnyValue,
+    includesValue,
     isYes,
     notApplicable,
     pass
@@ -12,8 +12,8 @@ const RP12 = {
     name: "Nonperson accounts are restricted to authorized purpose",
     category: "SCR",
     requiredQuestions: [
-    "CSIR-SvcAcct",
-    "CSIR-SCR-NonpersonAcct-Restricted"
+        "CSIR-SvcAcct",
+        "CSIR-SCR-NonpersonAcct-Restricted"
     ],
 
     async validate(context) {
@@ -31,22 +31,38 @@ const RP12 = {
             );
         }
 
-        return includesAnyValue(
-            context,
-            "CSIR-SCR-NonpersonAcct-Restricted",
-            [
-                "Yes",
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Restricted",
                 "No"
-            ]
-        )
-            ? pass(
-                this.id,
-                "CSIR-SCR-NonpersonAcct-Restricted is answered Yes or No."
             )
-            : fail(
+        ) {
+
+            return fail(
                 this.id,
-                "CSIR-SvcAcct is Yes, so CSIR-SCR-NonpersonAcct-Restricted must be Yes or No."
+                "CSIR-SCR-NonpersonAcct-Restricted is No."
             );
+        }
+
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Restricted",
+                "Yes"
+            )
+        ) {
+
+            return pass(
+                this.id,
+                "CSIR-SCR-NonpersonAcct-Restricted is Yes."
+            );
+        }
+
+        return fail(
+            this.id,
+            "CSIR-SCR-NonpersonAcct-Restricted is not answered."
+        );
     }
 };
 

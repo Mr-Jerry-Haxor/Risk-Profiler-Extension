@@ -1,6 +1,6 @@
 import {
     fail,
-    includesAnyValue,
+    includesValue,
     isYes,
     notApplicable,
     pass
@@ -12,8 +12,8 @@ const RP13 = {
     name: "Nonperson accounts are managed",
     category: "SCR",
     requiredQuestions: [
-    "CSIR-SvcAcct",
-    "CSIR-SCR-NonpersonAcct-Managed"
+        "CSIR-SvcAcct",
+        "CSIR-SCR-NonpersonAcct-Managed"
     ],
 
     async validate(context) {
@@ -31,22 +31,38 @@ const RP13 = {
             );
         }
 
-        return includesAnyValue(
-            context,
-            "CSIR-SCR-NonpersonAcct-Managed",
-            [
-                "Yes",
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Managed",
                 "No"
-            ]
-        )
-            ? pass(
-                this.id,
-                "CSIR-SCR-NonpersonAcct-Managed is answered Yes or No."
             )
-            : fail(
+        ) {
+
+            return fail(
                 this.id,
-                "CSIR-SvcAcct is Yes, so CSIR-SCR-NonpersonAcct-Managed must be Yes or No."
+                "CSIR-SCR-NonpersonAcct-Managed is No."
             );
+        }
+
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Managed",
+                "Yes"
+            )
+        ) {
+
+            return pass(
+                this.id,
+                "CSIR-SCR-NonpersonAcct-Managed is Yes."
+            );
+        }
+
+        return fail(
+            this.id,
+            "CSIR-SCR-NonpersonAcct-Managed is not answered."
+        );
     }
 };
 

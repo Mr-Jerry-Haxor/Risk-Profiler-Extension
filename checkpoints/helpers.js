@@ -243,7 +243,9 @@ export function isWebLikeApplication(
             "Web services",
             "API",
             "Software-as-a-Service",
-            "SaaS"
+            "SaaS",
+            "Platform-as-a-Service",
+            "PaaS"
         ]
     );
 }

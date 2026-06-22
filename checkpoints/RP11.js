@@ -1,6 +1,6 @@
 import {
     fail,
-    includesAnyValue,
+    includesValue,
     isYes,
     notApplicable,
     pass
@@ -8,12 +8,16 @@ import {
 from "./helpers.js";
 
 const RP11 = {
+
     id: "RP11",
+
     name: "Nonperson accounts are removed/disabled when not required",
+
     category: "SCR",
+
     requiredQuestions: [
-    "CSIR-SvcAcct",
-    "CSIR-SCR-NonpersonAcct-Disable"
+        "CSIR-SvcAcct",
+        "CSIR-SCR-NonpersonAcct-Disable"
     ],
 
     async validate(context) {
@@ -31,22 +35,38 @@ const RP11 = {
             );
         }
 
-        return includesAnyValue(
-            context,
-            "CSIR-SCR-NonpersonAcct-Disable",
-            [
-                "Yes",
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Disable",
                 "No"
-            ]
-        )
-            ? pass(
-                this.id,
-                "CSIR-SCR-NonpersonAcct-Disable is answered Yes or No."
             )
-            : fail(
+        ) {
+
+            return fail(
                 this.id,
-                "CSIR-SvcAcct is Yes, so CSIR-SCR-NonpersonAcct-Disable must be Yes or No."
+                "CSIR-SCR-NonpersonAcct-Disable is No."
             );
+        }
+
+        if (
+            includesValue(
+                context,
+                "CSIR-SCR-NonpersonAcct-Disable",
+                "Yes"
+            )
+        ) {
+
+            return pass(
+                this.id,
+                "CSIR-SCR-NonpersonAcct-Disable is Yes."
+            );
+        }
+
+        return fail(
+            this.id,
+            "CSIR-SCR-NonpersonAcct-Disable is not answered."
+        );
     }
 };
 

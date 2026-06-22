@@ -111,7 +111,7 @@ const RP4 = {
             deviceCounts.length === 0
         ) {
 
-            return fail(
+            return notApplicable(
                 this.id,
                 "CSIR-DeviceCount is not answered."
             );

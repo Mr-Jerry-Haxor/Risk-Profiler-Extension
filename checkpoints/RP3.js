@@ -1,20 +1,24 @@
 import {
     fail,
+    findValuesByKeyFragment,
+    getAnswer,
+    getAnswers,
+    getQuestionSummary,
+    hasAnswer,
     includesValue,
-    isWebLikeApplication,
+    normalize,
     notApplicable,
-    pass,
-    valueContainsAny
+    pass
 }
 from "./helpers.js";
 
 const RP3 = {
     id: "RP3",
-    name: "MFA via WSSO is used only with web-based application types",
+    name: "WSSO applications must have a URL",
     category: "Architecture Overview",
     requiredQuestions: [
-    "CSIR-MFA",
-    "CSIR-AppType"
+        "CSIR-MFA",
+        "CSIR-AppType"
     ],
 
     async validate(context) {
@@ -26,9 +30,7 @@ const RP3 = {
                 "MFA via Web Single Sign On (WSSO)"
             );
 
-        if (
-            !wssoSelected
-        ) {
+        if (!wssoSelected) {
 
             return notApplicable(
                 this.id,
@@ -36,36 +38,104 @@ const RP3 = {
             );
         }
 
-        if (
-            isWebLikeApplication(
-                context
-            )
-        ) {
+        let apiUrls = [];
 
-            return pass(
-                this.id,
-                "WSSO is selected and the application type is web-based."
+        try {
+
+            const appTypeAnswer =
+                getAnswer(
+                    context,
+                    "CSIR-AppType"
+                );
+
+            const surveyTemplateQuestionId =
+                appTypeAnswer?.surveyTemplateQuestionId;
+
+            if (surveyTemplateQuestionId) {
+
+                const summary =
+                    await getQuestionSummary(
+                        context,
+                        surveyTemplateQuestionId
+                    );
+
+                apiUrls =
+                    (summary?.collectedDataItems || [])
+                        .map(
+                            item =>
+                                item?.dataCollector?.collectorValue
+                        )
+                        .filter(Boolean);
+            }
+
+        } catch (error) {
+
+            console.warn(
+                `RP3 URL lookup failed: ${error.message}`
             );
         }
 
-        // Non-web app type with WSSO — check if Boeing holds the IP
-        const boeingOwnsIp =
-            valueContainsAny(
-                context,
-                "CSIR-IPOwner",
-                [
-                    "Boeing"
-                ]
+        const apiUrlFound =
+            apiUrls.some(
+                url =>
+                    /^https?:\/\//i.test(
+                        String(url || "").trim()
+                    )
             );
 
-        return boeingOwnsIp
+        const answerUrlFound =
+            getAnswers(context)
+                .some(answer => {
+
+                    const questionId =
+                        normalize(
+                            answer.alternateQuestionId
+                        );
+
+                    if (
+                        !questionId.includes("url")
+                    ) {
+                        return false;
+                    }
+
+                    return hasAnswer(
+                        context,
+                        answer.alternateQuestionId
+                    );
+                });
+
+        const detailUrlFound =
+            findValuesByKeyFragment(
+                [
+                    context?.assessment,
+                    context?.application
+                ],
+                [
+                    "url",
+                    "uri",
+                    "link"
+                ]
+            )
+                .some(
+                    value =>
+                        /^https?:\/\//i.test(
+                            String(value || "").trim()
+                        )
+                );
+
+        const hasUrl =
+            apiUrlFound ||
+            answerUrlFound ||
+            detailUrlFound;
+
+        return hasUrl
             ? pass(
                 this.id,
-                "WSSO is selected and the application's intellectual property is Boeing-owned."
+                "WSSO is selected and a URL exists for the application."
             )
             : fail(
                 this.id,
-                "WSSO is selected, but the application type is not Web application, Web service/API, or SaaS, and IP is not Boeing-owned."
+                "WSSO is selected but no URL exists for the application."
             );
     }
 };
