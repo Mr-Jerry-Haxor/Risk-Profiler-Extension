@@ -94,14 +94,24 @@ export function filterAssessments(
             results.filter(
                 item => {
 
-                    const isIncomplete =
-                        !!item.incompleteAssessmentId ||
-                        !!item.hasIncomplete;
+                    const isInc =
+                        isIncompleteAssessment(item);
 
-                    return filters.assessmentStatus ===
-                        "incomplete"
-                        ? isIncomplete
-                        : !isIncomplete;
+                    if (
+                        filters.assessmentStatus === "incomplete" &&
+                        !isInc
+                    ) {
+                        return false;
+                    }
+
+                    if (
+                        filters.assessmentStatus === "completed" &&
+                        isInc
+                    ) {
+                        return false;
+                    }
+
+                    return true;
                 }
             );
     }
@@ -109,15 +119,40 @@ export function filterAssessments(
     return results;
 }
 
+export function isIncompleteAssessment(
+    assessment
+) {
+
+    return Boolean(
+        assessment.incompleteAssessmentId ||
+        assessment.hasIncomplete
+    );
+}
+
+function getFilterDate(assessment) {
+
+    if (
+        isIncompleteAssessment(assessment)
+    ) {
+
+        return (
+            assessment.incompleteInitiatedOn ||
+            assessment.raw?.incompleteInitiatedOn
+        );
+    }
+
+    return (
+        assessment.attestOn ||
+        assessment.surveyCompletedOn ||
+        assessment.raw?.attestOn ||
+        assessment.raw?.surveyCompletedOn
+    );
+}
+
 function getAssessmentDateKey(item) {
 
     const value =
-        item.surveyCompletedOn ||
-        item.attestOn ||
-        item.incompleteInitiatedOn ||
-        item.raw?.surveyCompletedOn ||
-        item.raw?.attestOn ||
-        item.raw?.incompleteInitiatedOn;
+        getFilterDate(item);
 
     if (
         !value

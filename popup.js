@@ -8,6 +8,7 @@ from "./storage/storage.js";
 
 import {
     filterAssessments,
+    isIncompleteAssessment,
     selectAll
 }
 from "./core/assessmentSelector.js";
@@ -164,6 +165,12 @@ function attachEvents() {
             applyFilters
         );
 
+    $("clearFiltersBtn")
+        ?.addEventListener(
+            "click",
+            clearFilters
+        );
+
     $("refreshBtn")
         ?.addEventListener(
             "click",
@@ -279,6 +286,26 @@ function applyFilters() {
     renderAssessments();
 }
 
+function clearFilters() {
+
+    $("searchInput").value = "";
+
+    $("regexMode").checked = false;
+
+    $("fromDate").value = "";
+
+    $("toDate").value = "";
+
+    $("assessmentStatusFilter").value = "";
+
+    $("ownerFilter").value = "";
+
+    filteredAssessments =
+        [...assessments];
+
+    renderAssessments();
+}
+
 /*
 ====================================================
 ASSESSMENT LIST
@@ -351,11 +378,10 @@ function renderAssessments() {
 
                     <div class="asset-sub date-info">
 
-                        <strong>Assessed date:</strong> ${formatDate(assessment.attestOn || assessment.raw?.attestOn) || "N/A"}
-
-                        •
-
-                        <strong>Survey completed date:</strong> ${formatDate(assessment.surveyCompletedOn || assessment.raw?.surveyCompletedOn) || "N/A"}
+                        ${isIncompleteAssessment(assessment)
+                            ? `<strong>Incomplete initiated date:</strong> ${formatDate(assessment.incompleteInitiatedOn || assessment.raw?.incompleteInitiatedOn) || "N/A"}`
+                            : `<strong>Assessed date:</strong> ${formatDate(assessment.attestOn || assessment.raw?.attestOn) || "N/A"} • <strong>Survey completed date:</strong> ${formatDate(assessment.surveyCompletedOn || assessment.raw?.surveyCompletedOn) || "N/A"}`
+                        }
 
                     </div>
 
@@ -385,8 +411,7 @@ function getAssessmentStatus(
 ) {
 
     const isIncomplete =
-        !!assessment.incompleteAssessmentId ||
-        !!assessment.hasIncomplete;
+        isIncompleteAssessment(assessment);
 
     if (
         isIncomplete
