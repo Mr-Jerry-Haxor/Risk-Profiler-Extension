@@ -813,14 +813,16 @@ function renderResults(
 
                     </strong>
 
-                    <span class="score-pill">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        ${hasMissingQuestionError ? `<span class="score-error-indicator" title="Question identifier was not found in the survey questions.">! Error</span>` : ""}
+                        <span class="score-pill">
 
-                        ${result.summary
-                            ? `${result.summary.score}%`
-                            : "Error"}
+                            ${result.summary
+                                ? `${result.summary.score}%`
+                                : "Error"}
 
-                    </span>
-                    ${hasMissingQuestionError ? `<span class="score-error-indicator" title="Question identifier was not found in the survey questions.">! Error</span>` : ""}
+                        </span>
+                    </div>
 
                 </div>
 
