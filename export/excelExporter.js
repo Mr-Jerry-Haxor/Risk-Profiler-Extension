@@ -192,13 +192,13 @@ function populateAssessmentSheet(worksheet, result, assessment) {
         const status = String(rule.status || "").toUpperCase();
         if (status === "PASS") {
             statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF00A300" } };
-            statusCell.font = { color: { argb: "FF006100" }, bold: true };
+            statusCell.font = { color: { argb: "ff000000" }, bold: true };
         } else if (status === "FAIL") {
             statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFF0000" } };
-            statusCell.font = { color: { argb: "FF9C0006" }, bold: true };
+            statusCell.font = { color: { argb: "ff000000" }, bold: true };
         } else if (status === "NA") {
             statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
-            statusCell.font = { color: { argb: "FF404040" }, italic: true };
+            statusCell.font = { color: { argb: "ff000000" }, italic: true };
         }
         worksheet.getCell(`D${row}`).value = rule.reason || "";
     });
