@@ -120,6 +120,7 @@ const RP8 = {
             hasExternalHosting ||
             hasExternalAppType;
 
+        
         const hasInternal =
             hosting.some(
                 value =>
@@ -133,6 +134,13 @@ const RP8 = {
                             )
                     )
             );
+
+        // New requirement: If CSIR-IntExtApp is Hybrid, pass if hosting is either Internal or External
+        const isHybrid = includesValue(context, "CSIR-IntExtApp", "Hybrid");
+        if (isHybrid && (hasExternalHosting || hasInternal)) {
+            return pass(this.id, "Hybrid architecture identified with valid hosting selection.");
+        }
+
 
         if (
             hasExternal &&

@@ -1,391 +1,613 @@
-const NS_MAIN =
-    "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
-const NS_REL =
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-
-const NS_PACKAGE_REL =
-    "http://schemas.openxmlformats.org/package/2006/relationships";
-
-const NS_CONTENT_TYPES =
-    "http://schemas.openxmlformats.org/package/2006/content-types";
-
-const NS_MARKUP =
-    "http://schemas.openxmlformats.org/markup-compatibility/2006";
-
-const INVALID_SHEET_CHARS =
-    /[\\/?*[\]:]/g;
-
-const HEADER_STYLE =
-    1;
-
-const LINK_STYLE =
-    2;
-
-export async function exportResults(
-    validationResults
-) {
-
-    const results =
-        Array.isArray(
-            validationResults
-        )
-            ? validationResults
-            : [];
-
-    const sheets =
-        buildSheets(
-            results
-        );
-
-    const files =
-        buildWorkbookFiles(
-            sheets
-        );
-
-    const blob =
-        createZip(
-            files
-        );
-
-    downloadBlob(
-        blob,
-        `Risk Profiler_Quality_List_${formatTimestamp(
-            new Date()
-        )}.xlsx`
+const TEMPLATE_PATH =
+    chrome.runtime.getURL(
+        "assets/encoded_data.txt"
     );
+
+export async function exportResults(validationResults) {
+    const results = Array.isArray(validationResults) ? validationResults : [];
+    const workbook = await loadTemplateWorkbook();
+    const templateSheet = workbook.worksheets[0];
+    const allAssessmentsSheet = workbook.addWorksheet("All Assessments");
+
+    const sheetLookup = new Map();
+
+    for (let index = 0; index < results.length; index++) {
+        const result = results[index];
+        const assessment = getAssessment(result);
+        const sheetName = createSheetName(assessment, index);
+
+        sheetLookup.set(assessment.assessmentId, sheetName);
+
+        const worksheet = cloneWorksheet(workbook, templateSheet, sheetName);
+        populateAssessmentSheet(worksheet, result, assessment);
+    }
+
+    buildSummarySheet(allAssessmentsSheet, results, sheetLookup);
+
+    workbook.removeWorksheet(templateSheet.id);
+
+    // Ensure Excel recalculates formulas (Totals, Percentages, etc.)
+    workbook.calcProperties.fullCalcOnLoad = true;
+    workbook.calcProperties.calcMode = "auto";
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadFile(buffer, `Risk_Profiler_Quality_List_${timestamp()}.xlsx`);
 }
 
-function buildSheets(
-    results
-) {
+/*
+====================================================
+LOAD TEMPLATE
+====================================================
+*/
 
-    const usedSheetNames =
-        new Set();
+async function loadTemplateWorkbook() {
 
-    const assessmentSheets =
-        results.map(
-            (
-                result,
-                index
-            ) => {
-
-                const assessment =
-                    getAssessment(
-                        result
-                    );
-
-                const sheetName =
-                    createSheetName(
-                        result,
-                        assessment,
-                        index,
-                        usedSheetNames
-                    );
-
-                return {
-
-                    id:
-                        index + 2,
-
-                    name:
-                        sheetName,
-
-                    rows:
-                        buildAssessmentRows(
-                            result,
-                            assessment
-                        )
-                };
-            }
+    const response =
+        await fetch(
+            TEMPLATE_PATH
         );
 
-    return [
+    const base64 =
+        (
+            await response.text()
+        )
+            .trim();
 
-        {
-            id:
-                1,
+    const binary =
+        Uint8Array.from(
+            atob(base64),
+            c =>
+                c.charCodeAt(0)
+        );
 
-            name:
-                "All Assessments",
+    const workbook =
+        new ExcelJS.Workbook();
 
-            rows:
-                buildAllAssessmentsRows(
-                    results,
-                    assessmentSheets
-                )
-        },
+    await workbook.xlsx.load(
+        binary.buffer
+    );
 
-        ...assessmentSheets
-    ];
+    return workbook;
 }
 
-function buildAllAssessmentsRows(
-    results,
-    assessmentSheets
-) {
+/*
+====================================================
+SUMMARY SHEET
+====================================================
+*/
 
-    const rows = [
-
-        [
-            cell(
-                "Open Sheet",
-                HEADER_STYLE
-            ),
-            cell(
-                "Assessment ID",
-                HEADER_STYLE
-            ),
-            cell(
-                "Application",
-                HEADER_STYLE
-            ),
-            cell(
-                "Asset ID",
-                HEADER_STYLE
-            ),
-            cell(
-                "Lifecycle",
-                HEADER_STYLE
-            ),
-            cell(
-                "Application Manager",
-                HEADER_STYLE
-            ),
-            cell(
-                "System Owner",
-                HEADER_STYLE
-            ),
-            cell(
-                "Owning Business Unit",
-                HEADER_STYLE
-            ),
-            cell(
-                "Survey Completed On",
-                HEADER_STYLE
-            ),
-            cell(
-                "Attested On",
-                HEADER_STYLE
-            ),
-            cell(
-                "Attested By",
-                HEADER_STYLE
-            ),
-            cell(
-                "Passed",
-                HEADER_STYLE
-            ),
-            cell(
-                "Failed",
-                HEADER_STYLE
-            ),
-            cell(
-                "N/A",
-                HEADER_STYLE
-            ),
-            cell(
-                "Score",
-                HEADER_STYLE
-            ),
-            cell(
-                "Error",
-                HEADER_STYLE
-            )
-        ]
+function buildSummarySheet(worksheet, results, sheetLookup) {
+    worksheet.columns = [
+        { header: "Open", key: "open", width: 15 },
+        { header: "Assessment ID", key: "assessmentId", width: 18 },
+        { header: "Application", key: "application", width: 40 },
+        { header: "Asset ID", key: "assetId", width: 15 },
+        { header: "Lifecycle", key: "lifecycle", width: 20 },
+        { header: "Application Manager", key: "manager", width: 30 },
+        { header: "Business System Owner", key: "owner", width: 30 },
+        { header: "Survey Completed Date", key: "surveyCompletedDate", width: 22 },
+        { header: "Attested Date", key: "attestedDate", width: 22 },
+        { header: "Status", key: "status", width: 15 },
+        { header: "Attested By", key: "attestedBy", width: 30 },
+        { header: "Passed", key: "passed", width: 12 },
+        { header: "Failed", key: "failed", width: 12 },
+        { header: "N/A", key: "na", width: 12 },
+        { header: "Score", key: "score", width: 12 },
+        { header: "Error", key: "error", width: 60 }
     ];
 
-    results.forEach(
+    results.forEach(result => {
+        const assessment = getAssessment(result);
+        const summary = result.summary || {};
+
+        const failedRules =
+            (result.results || [])
+                .filter(r => r.status === "FAIL")
+                .map(r => `${r.id}: ${r.reason}`);
+
+        const missingRules =
+            (result.results || [])
+                .filter(r =>
+                    r.reason ===
+                    "Question identifier was not found in the survey questions."
+                )
+                .map(r => r.id);
+
+        const errorText = [
+            result.error,
+            missingRules.length
+                ? `Missing Questions: ${missingRules.join(", ")}`
+                : "",
+            failedRules.length
+                ? failedRules.join(" | ")
+                : ""
+        ]
+        .filter(Boolean)
+        .join(" | ");
+
+        const row = worksheet.addRow({
+            open: "Open",
+            assessmentId: assessment.assessmentId,
+            application: assessment.assetName,
+            assetId: assessment.assetId,
+            lifecycle: assessment.lifeCycle,
+            manager: assessment.appMgrName,
+            owner: assessment.sysOwnerName,
+            surveyCompletedDate:
+                formatDate(
+                    assessment.surveyCompletedOn
+                ),
+
+            attestedDate:
+                formatDate(
+                    assessment.attestOn
+                ),
+
+            status:
+                assessment.hasIncomplete
+                    ? "Incomplete"
+                    : "Completed",
+
+            attestedBy:
+                assessment.attestName || "",
+            passed: summary.passed || 0,
+            failed: summary.failed || 0,
+            na: summary.na || 0,
+            score: summary.score ? `${summary.score}%` : "",
+            error: errorText 
+        });
+
+        const sheetName = sheetLookup.get(assessment.assessmentId);
+        const hyperlinkCell = row.getCell(1);
+        hyperlinkCell.value = { text: "Open", hyperlink: `#'${sheetName}'!A1` };
+        hyperlinkCell.font = { color: { argb: "FF0563C1" }, underline: true };
+    });
+
+    worksheet.getRow(1).font = { bold: true };
+}
+
+
+/*
+====================================================
+ASSESSMENT SHEETS
+====================================================
+*/
+
+function populateAssessmentSheet(worksheet, result, assessment) {
+    worksheet.getCell("C2").value = assessment.assetName || "";
+    worksheet.getCell("C3").value = assessment.assetId || "";
+    worksheet.getCell("C4").value = assessment.appMgrName || "";
+    worksheet.getCell("C5").value = formatDate(new Date());
+
+    const rpMap = discoverRpRows(worksheet);
+
+    (result.results || []).forEach(rule => {
+        const row = rpMap[String(rule.id).toUpperCase()];
+        if (!row) return;
+
+        const statusCell = worksheet.getCell(`A${row}`);
+        statusCell.value = convertStatus(rule.status);
+
+        const status = String(rule.status || "").toUpperCase();
+        if (status === "PASS") {
+            statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF00A300" } };
+            statusCell.font = { color: { argb: "FF006100" }, bold: true };
+        } else if (status === "FAIL") {
+            statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFF0000" } };
+            statusCell.font = { color: { argb: "FF9C0006" }, bold: true };
+        } else if (status === "NA") {
+            statusCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+            statusCell.font = { color: { argb: "FF404040" }, italic: true };
+        }
+        worksheet.getCell(`D${row}`).value = rule.reason || "";
+    });
+}
+
+function discoverRpRows(
+    worksheet
+) {
+
+    const map = {};
+
+    worksheet.eachRow(
         (
-            result,
-            index
+            row,
+            rowNumber
         ) => {
 
-            const assessment =
-                getAssessment(
-                    result
-                );
+            const value =
+                String(
+                    row.getCell(2)
+                        .value || ""
+                )
+                    .trim()
+                    .toUpperCase();
 
-            const summary =
-                result.summary || {};
+            if (
+                /^RP\d+$/.test(
+                    value
+                )
+            ) {
 
-            const missingQuestionRps = (result.results || [])
-                .filter(r => r.reason === "Question identifier was not found in the survey questions.")
-                .map(r => r.id)
-                .join(", ");
-
-            const errorText = missingQuestionRps ? `Missing Questions: ${missingQuestionRps}` : (result.error || "");
-
-            rows.push([
-
-                cell(
-                    "Open Sheet",
-                    LINK_STYLE,
-                    `#'${escapeFormulaSheetName(
-                        assessmentSheets[index].name
-                    )}'!A1`
-                ),
-                assessment.assessmentId,
-                assessment.assetName,
-                assessment.assetId,
-                assessment.lifeCycle,
-                assessment.appMgrName,
-                assessment.sysOwnerName,
-                assessment.owningBusUnit,
-                assessment.surveyCompletedOn,
-                assessment.attestOn,
-                assessment.attestName,
-                summary.passed,
-                summary.failed,
-                summary.na,
-                formatScore(
-                    summary.score
-                ),
-                errorText
-            ]);
+                map[value] =
+                    rowNumber;
+            }
         }
     );
 
-    return rows;
+    return map;
 }
 
-function buildAssessmentRows(
-    result,
-    assessment
+/*
+====================================================
+CLONE SHEET
+====================================================
+*/
+
+
+function cloneWorksheet(
+    workbook,
+    source,
+    name
 ) {
 
-    const summary =
-        result.summary || {};
-
-    const rows = [
-
-        [
-            cell(
-                "Assessment Details",
-                HEADER_STYLE
-            ),
-            ""
-        ],
-        [
-            "Assessment ID",
-            assessment.assessmentId
-        ],
-        [
-            "Application",
-            assessment.assetName
-        ],
-        [
-            "Asset ID",
-            assessment.assetId
-        ],
-        [
-            "Lifecycle",
-            assessment.lifeCycle
-        ],
-        [
-            "Application Manager",
-            assessment.appMgrName
-        ],
-        [
-            "System Owner",
-            assessment.sysOwnerName
-        ],
-        [
-            "Owning Business Unit",
-            assessment.owningBusUnit
-        ],
-        [
-            "Survey Completed On",
-            assessment.surveyCompletedOn
-        ],
-        [
-            "Attested On",
-            assessment.attestOn
-        ],
-        [
-            "Attested By",
-            assessment.attestName
-        ],
-        [],
-        [
-            cell(
-                "Validation Summary",
-                HEADER_STYLE
-            ),
-            ""
-        ],
-        [
-            "Passed",
-            summary.passed
-        ],
-        [
-            "Failed",
-            summary.failed
-        ],
-        [
-            "N/A",
-            summary.na
-        ],
-        [
-            "Score",
-            formatScore(
-                summary.score
-            )
-        ]
-    ];
-
-    if (
-        result.error
-    ) {
-
-        rows.push(
-            [],
-            [
-                cell(
-                    "Error",
-                    HEADER_STYLE
-                ),
-                result.error
-            ]
+    const target =
+        workbook.addWorksheet(
+            name
         );
 
-        return rows;
+    /*
+    ====================================
+    WORKSHEET SETTINGS
+    ====================================
+    */
+
+    if (
+        source.properties
+    ) {
+
+        target.properties =
+            JSON.parse(
+                JSON.stringify(
+                    source.properties
+                )
+            );
     }
 
-    rows.push(
-        [],
-        [
-            cell(
-                "Rule",
-                HEADER_STYLE
-            ),
-            cell(
-                "Status",
-                HEADER_STYLE
-            ),
-            cell(
-                "Reason",
-                HEADER_STYLE
-            )
-        ]
+    if (
+        source.pageSetup
+    ) {
+
+        target.pageSetup =
+            JSON.parse(
+                JSON.stringify(
+                    source.pageSetup
+                )
+            );
+    }
+
+    if (
+        source.views
+    ) {
+
+        target.views =
+            JSON.parse(
+                JSON.stringify(
+                    source.views
+                )
+            );
+    }
+
+    /*
+    ====================================
+    COLUMNS
+    ====================================
+    */
+
+    source.columns.forEach(
+        (
+            column,
+            index
+        ) => {
+
+            const targetColumn =
+                target.getColumn(
+                    index + 1
+                );
+
+            targetColumn.width =
+                column.width;
+
+            targetColumn.hidden =
+                column.hidden;
+
+            targetColumn.outlineLevel =
+                column.outlineLevel;
+        }
     );
 
-    (
-        result.results || []
-    ).forEach(rule => {
+    /*
+    ====================================
+    ROWS + CELLS
+    ====================================
+    */
 
-        const isMissing = rule.reason === "Question identifier was not found in the survey questions.";
-        const rowStyle = isMissing ? 3 : 0;
+    source.eachRow(
+        {
+            includeEmpty:
+                true
+        },
+        (
+            row,
+            rowNumber
+        ) => {
 
-        rows.push([
+            const targetRow =
+                target.getRow(
+                    rowNumber
+                );
 
-            cell(rule.id, rowStyle),
-            cell(rule.status, rowStyle),
-            cell(rule.reason, rowStyle)
-        ]);
-    });
+            targetRow.height =
+                row.height;
 
-    return rows;
+            targetRow.hidden =
+                row.hidden;
+
+            targetRow.outlineLevel =
+                row.outlineLevel;
+
+            row.eachCell(
+                {
+                    includeEmpty:
+                        true
+                },
+                (
+                    cell,
+                    colNumber
+                ) => {
+
+                    const targetCell =
+                        targetRow.getCell(
+                            colNumber
+                        );
+
+                    /*
+                    ====================================
+                    VALUE
+                    ====================================
+                    */
+
+                    if (
+                        typeof cell.value === "object" &&
+                        cell.value !== null
+                    ) {
+
+                        try {
+
+                            targetCell.value =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.value
+                                    )
+                                );
+
+                        } catch {
+
+                            targetCell.value =
+                                cell.text || "";
+                        }
+
+                    } else {
+
+                        targetCell.value =
+                            cell.value;
+                    }
+
+                    /*
+                    ====================================
+                    STYLE
+                    ====================================
+                    */
+
+                    try {
+
+                        targetCell.style =
+                            JSON.parse(
+                                JSON.stringify(
+                                    cell.style || {}
+                                )
+                            );
+
+                    } catch {
+
+                        targetCell.style = {};
+                    }
+
+                    /*
+                    ====================================
+                    ALIGNMENT
+                    ====================================
+                    */
+
+                    if (
+                        cell.alignment
+                    ) {
+
+                        try {
+
+                            targetCell.alignment =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.alignment
+                                    )
+                                );
+
+                        } catch {}
+                    }
+
+                    /*
+                    ====================================
+                    FONT
+                    ====================================
+                    */
+
+                    if (
+                        cell.font
+                    ) {
+
+                        try {
+
+                            targetCell.font =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.font
+                                    )
+                                );
+
+                        } catch {}
+                    }
+
+                    /*
+                    ====================================
+                    BORDER
+                    ====================================
+                    */
+
+                    if (
+                        cell.border
+                    ) {
+
+                        try {
+
+                            targetCell.border =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.border
+                                    )
+                                );
+
+                        } catch {}
+                    }
+
+                    /*
+                    ====================================
+                    FILL
+                    ====================================
+                    */
+
+                    if (
+                        cell.fill
+                    ) {
+
+                        try {
+
+                            targetCell.fill =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.fill
+                                    )
+                                );
+
+                        } catch {}
+                    }
+
+                    /*
+                    ====================================
+                    NUMBER FORMAT
+                    ====================================
+                    */
+
+                    if (
+                        cell.numFmt
+                    ) {
+
+                        targetCell.numFmt =
+                            cell.numFmt;
+                    }
+
+                    /*
+                    ====================================
+                    PROTECTION
+                    ====================================
+                    */
+
+                    if (
+                        cell.protection
+                    ) {
+
+                        try {
+
+                            targetCell.protection =
+                                JSON.parse(
+                                    JSON.stringify(
+                                        cell.protection
+                                    )
+                                );
+
+                        } catch {}
+                    }
+                }
+            );
+        }
+    );
+
+    /*
+    ====================================
+    MERGED CELLS
+    ====================================
+    */
+
+    if (
+        source.model?.merges
+    ) {
+
+        source.model.merges.forEach(
+            merge => {
+
+                try {
+
+                    target.mergeCells(
+                        merge
+                    );
+
+                } catch {}
+            }
+        );
+    }
+
+    return target;
+}
+
+
+/*
+====================================================
+HELPERS
+====================================================
+*/
+
+function convertStatus(
+    status
+) {
+
+    switch (
+        String(
+            status || ""
+        ).toUpperCase()
+    ) {
+
+        case "PASS":
+            return "Yes";
+
+        case "FAIL":
+            return "No";
+
+        case "NA":
+            return "N/A";
+
+        default:
+            return "";
+    }
 }
 
 function getAssessment(
@@ -402,864 +624,82 @@ function getAssessment(
         assetName:
             result.assetName,
 
-        ...(
-            result.assessment || {}
-        )
-    };
-}
-
-function buildWorkbookFiles(
-    sheets
-) {
-
-    const files = {};
-
-    files["[Content_Types].xml"] =
-        buildContentTypes(
-            sheets
-        );
-
-    files["_rels/.rels"] =
-        buildRootRelationships();
-
-    files["xl/workbook.xml"] =
-        buildWorkbookXml(
-            sheets
-        );
-
-    files["xl/_rels/workbook.xml.rels"] =
-        buildWorkbookRelationships(
-            sheets
-        );
-
-    files["xl/styles.xml"] =
-        buildStylesXml();
-
-    sheets.forEach(
-        (
-            sheet,
-            index
-        ) => {
-
-            files[
-                `xl/worksheets/sheet${index + 1}.xml`
-            ] =
-                buildWorksheetXml(
-                    sheet.rows
-                );
-        }
-    );
-
-    return files;
-}
-
-function buildContentTypes(
-    sheets
-) {
-
-    const sheetOverrides =
-        sheets.map(
-            (
-                _sheet,
-                index
-            ) =>
-                `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
-        )
-        .join("");
-
-    return xml(
-        `<Types xmlns="${NS_CONTENT_TYPES}">
-            <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-            <Default Extension="xml" ContentType="application/xml"/>
-            <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-            <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-            ${sheetOverrides}
-        </Types>`
-    );
-}
-
-function buildRootRelationships() {
-
-    return xml(
-        `<Relationships xmlns="${NS_PACKAGE_REL}">
-            <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-        </Relationships>`
-    );
-}
-
-function buildWorkbookXml(
-    sheets
-) {
-
-    const sheetXml =
-        sheets.map(
-            (
-                sheet,
-                index
-            ) =>
-                `<sheet name="${escapeXmlAttribute(
-                    sheet.name
-                )}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
-        )
-        .join("");
-
-    return xml(
-        `<workbook xmlns="${NS_MAIN}" xmlns:r="${NS_REL}">
-            <sheets>${sheetXml}</sheets>
-        </workbook>`
-    );
-}
-
-function buildWorkbookRelationships(
-    sheets
-) {
-
-    const sheetRelationships =
-        sheets.map(
-            (
-                _sheet,
-                index
-            ) =>
-                `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
-        )
-        .join("");
-
-    return xml(
-        `<Relationships xmlns="${NS_PACKAGE_REL}">
-            ${sheetRelationships}
-            <Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-        </Relationships>`
-    );
-}
-
-function buildStylesXml() {
-
-    return xml(
-        `<styleSheet xmlns="${NS_MAIN}">
-            <fonts count="3">
-                <font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
-                <font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
-                <font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/><family val="2"/></font>
-            </fonts>
-            <fills count="4">
-                <fill><patternFill patternType="none"/></fill>
-                <fill><patternFill patternType="gray125"/></fill>
-                <fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill>
-                <fill><patternFill patternType="solid"><fgColor rgb="FFF8D7DA"/><bgColor indexed="64"/></patternFill></fill>
-            </fills>
-            <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-            <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-            <cellXfs count="4">
-                <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-                <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
-                <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
-                <xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>
-            </cellXfs>
-            <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-        </styleSheet>`
-    );
-}
-
-function buildWorksheetXml(
-    rows
-) {
-
-    const hyperlinks = [];
-
-    const rowXml =
-        rows.map(
-            (
-                row,
-                rowIndex
-            ) =>
-                buildRowXml(
-                    row,
-                    rowIndex + 1,
-                    hyperlinks
-                )
-        )
-        .join("");
-
-    const hyperlinkXml =
-        hyperlinks.length
-            ? `<hyperlinks>${hyperlinks.join("")}</hyperlinks>`
-            : "";
-
-    return xml(
-        `<worksheet xmlns="${NS_MAIN}" xmlns:r="${NS_REL}" xmlns:mc="${NS_MARKUP}" >
-            <sheetViews><sheetView workbookViewId="0"/></sheetViews>
-            <sheetFormatPr defaultRowHeight="15"/>
-            <sheetData>${rowXml}</sheetData>
-            ${hyperlinkXml}
-            <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
-        </worksheet>`
-    );
-}
-
-function buildRowXml(
-    row,
-    rowNumber,
-    hyperlinks
-) {
-
-    const cells =
-        row.map(
-            (
-                value,
-                columnIndex
-            ) =>
-                buildCellXml(
-                    normalizeCell(
-                        value
-                    ),
-                    columnIndex + 1,
-                    rowNumber,
-                    hyperlinks
-                )
-        )
-        .join("");
-
-    return `<row r="${rowNumber}">${cells}</row>`;
-}
-
-function buildCellXml(
-    value,
-    columnNumber,
-    rowNumber,
-    hyperlinks
-) {
-
-    const ref =
-        `${columnName(
-            columnNumber
-        )}${rowNumber}`;
-
-    const style =
-        value.style
-            ? ` s="${value.style}"`
-            : "";
-
-    if (
-        value.hyperlink
-    ) {
-
-        hyperlinks.push(
-            `<hyperlink ref="${ref}" location="${escapeXmlAttribute(
-                value.hyperlink.slice(
-                    1
-                )
-            )}" display="${escapeXmlAttribute(
-                value.value
-            )}"/>`
-        );
-    }
-
-    if (
-        value.value === null ||
-        value.value === undefined ||
-        value.value === ""
-    ) {
-
-        return `<c r="${ref}"${style}/>`;
-    }
-
-    if (
-        typeof value.value === "number" &&
-        Number.isFinite(
-            value.value
-        )
-    ) {
-
-        return `<c r="${ref}"${style}><v>${value.value}</v></c>`;
-    }
-
-    return `<c r="${ref}" t="inlineStr"${style}><is><t>${escapeXmlText(
-        String(
-            value.value
-        )
-    )}</t></is></c>`;
-}
-
-function cell(
-    value,
-    style,
-    hyperlink
-) {
-
-    return {
-        value,
-        style,
-        hyperlink
-    };
-}
-
-function normalizeCell(
-    value
-) {
-
-    if (
-        value &&
-        typeof value === "object" &&
-        Object.prototype.hasOwnProperty.call(
-            value,
-            "value"
-        )
-    ) {
-
-        return value;
-    }
-
-    return {
-        value
+        ...(result.assessment || {})
     };
 }
 
 function createSheetName(
-    result,
     assessment,
-    index,
-    usedSheetNames
+    index
 ) {
 
-    const source =
-        [
-            assessment.assessmentId,
-            assessment.assetName || result.assetName || `Assessment ${index + 1}`
-        ]
-        .filter(Boolean)
-        .join(" ");
-
-    const base =
-        sanitizeSheetName(
-            source
-        );
-
-    let name =
-        base;
-
-    let counter = 2;
-
-    while (
-        usedSheetNames.has(
-            name.toLowerCase()
-        )
-    ) {
-
-        const suffix =
-            ` ${counter}`;
-
-        name =
-            `${base.slice(
-                0,
-                31 - suffix.length
-            )}${suffix}`;
-
-        counter++;
-    }
-
-    usedSheetNames.add(
-        name.toLowerCase()
-    );
-
-    return name;
-}
-
-function sanitizeSheetName(
-    value
-) {
-
-    const cleaned =
-        String(
-            value || "Assessment"
+    const name =
+        (
+            assessment.assetName ||
+            `Assessment ${index + 1}`
         )
             .replace(
-                INVALID_SHEET_CHARS,
-                " "
-            )
-            .replace(
-                /\s+/g,
+                /[\\/?*[\]:]/g,
                 " "
             )
             .trim();
 
-    return (
-        cleaned || "Assessment"
-    ).slice(
+    return name.slice(
         0,
         31
     );
 }
 
-function escapeFormulaSheetName(
-    name
+function formatDate(
+    value
 ) {
 
-    return String(
-        name
-    ).replace(
-        /'/g,
-        "''"
-    );
-}
-
-function formatScore(
-    score
-) {
-
-    if (
-        score === null ||
-        score === undefined ||
-        score === ""
-    ) {
-
+    if (!value)
         return "";
-    }
 
-    return `${score}%`;
+    try {
+
+        return new Date(
+            value
+        )
+            .toLocaleDateString();
+
+    } catch {
+
+        return value;
+    }
 }
 
-function formatTimestamp(
-    date
-) {
+function timestamp() {
+
+    const d =
+        new Date();
 
     const pad =
-        value =>
+        n =>
             String(
-                value
+                n
             ).padStart(
                 2,
                 "0"
             );
 
-    return [
-        date.getFullYear(),
-        pad(
-            date.getMonth() + 1
-        ),
-        pad(
-            date.getDate()
-        )
-    ].join("") +
-        "_" +
-        [
-            pad(
-                date.getHours()
-            ),
-            pad(
-                date.getMinutes()
-            ),
-            pad(
-                date.getSeconds()
-            )
-        ].join("");
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-function xml(
-    body
-) {
-
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${body}`;
-}
-
-function escapeXmlText(
-    value
-) {
-
-    return String(
-        value
-    )
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-        .replace(
-            /</g,
-            "&lt;"
-        )
-        .replace(
-            />/g,
-            "&gt;"
-        );
-}
-
-function escapeXmlAttribute(
-    value
-) {
-
-    return escapeXmlText(
-        value
-    )
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-        .replace(
-            /'/g,
-            "&apos;"
-        );
-}
-
-function columnName(
-    columnNumber
-) {
-
-    let name = "";
-
-    let current =
-        columnNumber;
-
-    while (
-        current > 0
-    ) {
-
-        const remainder =
-            (
-                current - 1
-            ) % 26;
-
-        name =
-            String.fromCharCode(
-                65 + remainder
-            ) + name;
-
-        current =
-            Math.floor(
-                (
-                    current - 1
-                ) / 26
-            );
-    }
-
-    return name;
-}
-
-function createZip(
-    files
-) {
-
-    const encoder =
-        new TextEncoder();
-
-    const entries = [];
-
-    let offset = 0;
-
-    Object.entries(
-        files
-    ).forEach(
-        ([
-            name,
-            content
-        ]) => {
-
-            const nameBytes =
-                encoder.encode(
-                    name
-                );
-
-            const contentBytes =
-                encoder.encode(
-                    content
-                );
-
-            const crc =
-                crc32(
-                    contentBytes
-                );
-
-            const localHeader =
-                buildLocalFileHeader(
-                    nameBytes,
-                    contentBytes,
-                    crc
-                );
-
-            entries.push({
-
-                nameBytes,
-                contentBytes,
-                crc,
-                offset,
-                localHeader
-            });
-
-            offset +=
-                localHeader.length +
-                contentBytes.length;
-        }
-    );
-
-    const centralDirectoryParts =
-        entries.map(
-            entry =>
-                buildCentralDirectoryHeader(
-                    entry
-                )
-        );
-
-    const centralDirectorySize =
-        centralDirectoryParts.reduce(
-            (
-                total,
-                part
-            ) =>
-                total + part.length,
-            0
-        );
-
-    const endRecord =
-        buildEndOfCentralDirectory(
-            entries.length,
-            centralDirectorySize,
-            offset
-        );
-
-    const parts = [];
-
-    entries.forEach(entry => {
-
-        parts.push(
-            entry.localHeader,
-            entry.contentBytes
-        );
-    });
-
-    parts.push(
-        ...centralDirectoryParts,
-        endRecord
-    );
-
-    return new Blob(
-        parts,
-        {
-            type:
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        }
-    );
-}
-
-function buildLocalFileHeader(
-    nameBytes,
-    contentBytes,
-    crc
-) {
-
-    const header =
-        new Uint8Array(
-            30 + nameBytes.length
-        );
-
-    const view =
-        new DataView(
-            header.buffer
-        );
-
-    view.setUint32(
-        0,
-        0x04034b50,
-        true
-    );
-    view.setUint16(
-        4,
-        20,
-        true
-    );
-    view.setUint16(
-        6,
-        0,
-        true
-    );
-    view.setUint16(
-        8,
-        0,
-        true
-    );
-    view.setUint32(
-        14,
-        crc,
-        true
-    );
-    view.setUint32(
-        18,
-        contentBytes.length,
-        true
-    );
-    view.setUint32(
-        22,
-        contentBytes.length,
-        true
-    );
-    view.setUint16(
-        26,
-        nameBytes.length,
-        true
-    );
-
-    header.set(
-        nameBytes,
-        30
-    );
-
-    return header;
-}
-
-function buildCentralDirectoryHeader(
-    entry
-) {
-
-    const header =
-        new Uint8Array(
-            46 + entry.nameBytes.length
-        );
-
-    const view =
-        new DataView(
-            header.buffer
-        );
-
-    view.setUint32(
-        0,
-        0x02014b50,
-        true
-    );
-    view.setUint16(
-        4,
-        20,
-        true
-    );
-    view.setUint16(
-        6,
-        20,
-        true
-    );
-    view.setUint16(
-        10,
-        0,
-        true
-    );
-    view.setUint32(
-        16,
-        entry.crc,
-        true
-    );
-    view.setUint32(
-        20,
-        entry.contentBytes.length,
-        true
-    );
-    view.setUint32(
-        24,
-        entry.contentBytes.length,
-        true
-    );
-    view.setUint16(
-        28,
-        entry.nameBytes.length,
-        true
-    );
-    view.setUint32(
-        42,
-        entry.offset,
-        true
-    );
-
-    header.set(
-        entry.nameBytes,
-        46
-    );
-
-    return header;
-}
-
-function buildEndOfCentralDirectory(
-    entryCount,
-    centralDirectorySize,
-    centralDirectoryOffset
-) {
-
-    const record =
-        new Uint8Array(
-            22
-        );
-
-    const view =
-        new DataView(
-            record.buffer
-        );
-
-    view.setUint32(
-        0,
-        0x06054b50,
-        true
-    );
-    view.setUint16(
-        8,
-        entryCount,
-        true
-    );
-    view.setUint16(
-        10,
-        entryCount,
-        true
-    );
-    view.setUint32(
-        12,
-        centralDirectorySize,
-        true
-    );
-    view.setUint32(
-        16,
-        centralDirectoryOffset,
-        true
-    );
-
-    return record;
-}
-
-function crc32(
-    bytes
-) {
-
-    let crc =
-        0xffffffff;
-
-    for (
-        let i = 0;
-        i < bytes.length;
-        i++
-    ) {
-
-        crc ^=
-            bytes[i];
-
-        for (
-            let bit = 0;
-            bit < 8;
-            bit++
-        ) {
-
-            crc =
-                (
-                    crc >>> 1
-                ) ^
-                (
-                    0xedb88320 &
-                    -(
-                        crc & 1
-                    )
-                );
-        }
-    }
-
-    return (
-        crc ^ 0xffffffff
-    ) >>> 0;
-}
-
-function downloadBlob(
-    blob,
+function downloadFile(
+    buffer,
     fileName
 ) {
+
+    const blob =
+        new Blob(
+            [buffer],
+            {
+                type:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+        );
 
     const url =
         URL.createObjectURL(
@@ -1279,7 +719,11 @@ function downloadBlob(
 
     a.click();
 
-    URL.revokeObjectURL(
-        url
+    setTimeout(
+        () =>
+            URL.revokeObjectURL(
+                url
+            ),
+        1000
     );
 }

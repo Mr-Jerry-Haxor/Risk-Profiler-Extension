@@ -54,33 +54,29 @@ const RP6 = {
             );
         }
 
-        /*
-         * SaaS applications must be
-         * Not Subject to Export Controls
-         */
-        if (
-            isSaas(
-                context
-            )
-        ) {
-
-            return selectedCodes.includes(
-                "NOT_SUBJECT"
-            )
-                ? pass(
-                    this.id,
-                    "Application is SaaS and classification is Not Subject to Export Controls."
-                )
-                : fail(
-                    this.id,
-                    `Application is SaaS, but selected classification is: ${selectedClassifications.join(", ")}.`
-                );
-        }
 
         const referenceCode =
             extractReferenceClassification(
                 context?.exportControl
             );
+
+        
+
+        /*
+         * SaaS applications must be
+         * Not Subject to Export Controls OR 
+         * match the Export Control reference
+         */
+        if (isSaas(context)) {
+            const isCompliant = selectedCodes.includes("NOT_SUBJECT") || 
+                                (referenceCode && selectedCodes.includes(referenceCode));
+
+            return isCompliant
+                ? pass(this.id, "Application is SaaS and classification is valid based on Export Control reference.")
+                : fail(this.id, `Application is SaaS, but selected classification (${selectedClassifications.join(", ")}) does not match required criteria.`);
+        }
+
+        
 
         if (
             !referenceCode
