@@ -9,6 +9,7 @@
 
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "alarms",
     "tabs",
     "scripting"
