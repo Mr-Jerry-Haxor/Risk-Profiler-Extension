@@ -628,6 +628,11 @@ h1 {
     font-weight: 600;
 }
 
+.score-pill.score-low {
+    background: rgba(244, 164, 164, 0.25); /* Light red background */
+    color: #9b1c1c; /* Dark red text */
+}
+
 .result-meta {
 
     margin-top: 8px;

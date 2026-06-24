@@ -803,6 +803,9 @@ function renderResults(
                 rule => rule.reason === "Question identifier was not found in the survey questions."
             );
 
+            const score = result.summary ? result.summary.score : null;
+            const isLow = score !== null && score < 90;
+
             card.innerHTML = `
 
                 <div class="result-header">
@@ -815,12 +818,8 @@ function renderResults(
 
                     <div style="display: flex; align-items: center; gap: 8px;">
                         ${hasMissingQuestionError ? `<span class="score-error-indicator" title="Question identifier was not found in the survey questions.">! Error</span>` : ""}
-                        <span class="score-pill">
-
-                            ${result.summary
-                                ? `${result.summary.score}%`
-                                : "Error"}
-
+                        <span class="score-pill ${isLow ? 'score-low' : ''}">
+                            ${result.summary ? `${score}%` : "Error"}
                         </span>
                     </div>
 
