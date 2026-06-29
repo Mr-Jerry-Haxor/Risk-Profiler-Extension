@@ -61,6 +61,8 @@ async function initialize() {
     startProgressPolling();
 
     loadExistingResults();
+
+    setupSurveyDiffUI();
 }
 
 /*
@@ -1311,4 +1313,109 @@ async function exportExcel() {
     await exportResults(
         validationResults
     );
+}
+
+/*
+====================================================
+SURVEY DIFF MODAL
+====================================================
+*/
+
+async function setupSurveyDiffUI() {
+    const data = await chrome.storage.local.get("surveyChangesDiff");
+    const diff = data.surveyChangesDiff;
+
+    const icon = $("whatsNewIcon");
+    const modal = $("surveyDiffModal");
+    const closeBtn = $("closeModalBtn");
+    
+    if (!icon || !modal || !closeBtn) return;
+
+    if (!diff) {
+        icon.classList.add("hidden");
+        return;
+    }
+
+    icon.classList.remove("hidden");
+
+    icon.addEventListener("click", () => {
+        renderSurveyDiff(diff);
+        modal.classList.remove("hidden");
+    });
+
+    closeBtn.addEventListener("click", () => {
+        modal.classList.add("hidden");
+    });
+
+    window.addEventListener("click", (e) => {
+        if (e.target === modal) {
+            modal.classList.add("hidden");
+        }
+    });
+}
+
+function renderSurveyDiff(diff) {
+    const rangeEl = $("diffDateRange");
+    const contentEl = $("diffContent");
+    
+    if (!rangeEl || !contentEl) return;
+
+    const oldDate = diff.metadata.hardcodedUpdatedOn ? new Date(diff.metadata.hardcodedUpdatedOn).toLocaleDateString() : "Unknown";
+    const newDate = diff.metadata.latestUpdatedOn ? new Date(diff.metadata.latestUpdatedOn).toLocaleDateString() : "Unknown";
+
+    rangeEl.textContent = `From ${oldDate} to ${newDate}`;
+    
+    contentEl.innerHTML = "";
+
+    diff.newQuestions.forEach(q => {
+        const div = document.createElement("div");
+        div.className = "diff-item";
+        div.innerHTML = `
+            <h4><span class="diff-tag new">New Question</span> [ID: ${q.alternateQuestionId}]</h4>
+            <div class="diff-detail"><strong>Context:</strong> ${q.questionText}</div>
+        `;
+        contentEl.appendChild(div);
+    });
+
+    diff.removedQuestions.forEach(q => {
+        const div = document.createElement("div");
+        div.className = "diff-item";
+        div.innerHTML = `
+            <h4><span class="diff-tag removed">Removed Question</span> [ID: ${q.alternateQuestionId}]</h4>
+            <div class="diff-detail"><strong>Context:</strong> ${q.questionText}</div>
+        `;
+        contentEl.appendChild(div);
+    });
+
+    diff.modifiedQuestions.forEach(q => {
+        const div = document.createElement("div");
+        div.className = "diff-item";
+        
+        let tagsHTML = "";
+        let detailsHTML = "";
+        
+        if (q.textChanged) {
+            tagsHTML += `<span class="diff-tag changed">Question Changed</span>`;
+            detailsHTML += `
+                <div class="diff-detail"><strong>Old:</strong> ${q.textChanged.old}</div>
+                <div class="diff-detail"><strong>New:</strong> ${q.textChanged.new}</div>
+            `;
+        }
+        
+        if (q.optionsChanged) {
+            tagsHTML += `<span class="diff-tag changed">Options Changed</span>`;
+            if (q.optionsChanged.added && q.optionsChanged.added.length > 0) {
+                detailsHTML += `<div class="diff-detail"><strong>Added Options:</strong> ${q.optionsChanged.added.join(", ")}</div>`;
+            }
+            if (q.optionsChanged.removed && q.optionsChanged.removed.length > 0) {
+                detailsHTML += `<div class="diff-detail"><strong>Removed Options:</strong> ${q.optionsChanged.removed.join(", ")}</div>`;
+            }
+        }
+
+        div.innerHTML = `
+            <h4>${tagsHTML} [ID: ${q.alternateQuestionId}]</h4>
+            ${detailsHTML}
+        `;
+        contentEl.appendChild(div);
+    });
 }

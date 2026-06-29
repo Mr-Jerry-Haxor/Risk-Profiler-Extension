@@ -24,6 +24,7 @@
         <div class="header-actions">
 
             <span class="version-label">
+                <span id="whatsNewIcon" class="whats-new-icon hidden" title="What's New">📣New</span>
                 Quality control List version : 2.5
             </span>
 
@@ -382,6 +383,16 @@
         </div>
 
     </section>
+
+    <!-- MODAL -->
+    <div id="surveyDiffModal" class="modal hidden">
+        <div class="modal-content">
+            <span id="closeModalBtn" class="close-btn">&times;</span>
+            <h2>Risk Profile Question Changes</h2>
+            <div id="diffDateRange" class="diff-date-range"></div>
+            <div id="diffContent" class="diff-content"></div>
+        </div>
+    </div>
 
 </div>
 <script src="lib/exceljs.min.js"></script>

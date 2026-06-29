@@ -67,6 +67,28 @@ export async function getSurveyQuestions(
     return fetchJson(url);
 }
 
+export async function getSurveyTemplateDetails(
+    surveyTemplateId
+) {
+
+    if (
+        !surveyTemplateId
+    ) {
+
+        return null;
+    }
+
+    const url =
+        replaceTokens(
+            URLS.SURVEY_TEMPLATE_DETAIL,
+            {
+                id: surveyTemplateId
+            }
+        );
+
+    return fetchJson(url);
+}
+
 export async function getAssessmentContext(
     assessmentId
 ) {

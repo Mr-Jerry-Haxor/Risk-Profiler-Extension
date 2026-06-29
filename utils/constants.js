@@ -18,9 +18,13 @@ export const CONFIG = {
 
         LAST_RUN: "lastRun",
 
-        DEBUG: "debug"
+        DEBUG: "debug",
+        
+        SURVEY_CHANGES: "surveyChangesDiff"
     }
 };
+
+export const HARDCODED_SURVEY_TEMPLATE_ID = 524801;
 
 export const URLS = {
 
@@ -32,6 +36,9 @@ export const URLS = {
 
     ASSESSMENT_ANSWERS:
         "https://cairois.web.boeing.com/api/assessment/survey/{id}/answers",
+        
+    SURVEY_TEMPLATE_DETAIL:
+        "https://cairois.web.boeing.com/api/surveyTemplate/{id}",
 
     REVIEW_SUMMARY:
         "https://cairois.web.boeing.com/api/asset/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6",

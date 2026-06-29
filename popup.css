@@ -739,3 +739,157 @@ summary {
     margin-left: 8px;
     font-weight: 600;
 }
+
+/* ====================================================
+   WHAT'S NEW ICON
+   ==================================================== */
+
+.whats-new-icon {
+    cursor: pointer;
+    margin-left: 8px;
+    font-size: 15px;
+    display: inline-block;
+    vertical-align: middle;
+    transition: transform 0.15s ease;
+    user-select: none;
+}
+
+.whats-new-icon:hover {
+    transform: scale(1.2);
+}
+
+.whats-new-icon.hidden {
+    display: none;
+}
+
+/* ====================================================
+   SURVEY DIFF MODAL
+   ==================================================== */
+
+.modal {
+    display: flex;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.45);
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background-color: var(--card);
+    padding: 20px 24px 24px 24px;
+    border-radius: 10px;
+    width: 88%;
+    max-width: 580px;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+    border: 1px solid var(--border);
+}
+
+.modal-content h2 {
+    margin-top: 0;
+    margin-bottom: 4px;
+    font-size: 16px;
+    color: var(--text);
+}
+
+.close-btn {
+    color: var(--muted);
+    float: right;
+    font-size: 22px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 2px;
+    transition: color 0.15s;
+}
+
+.close-btn:hover {
+    color: var(--text);
+}
+
+/* ====================================================
+   DIFF CONTENT
+   ==================================================== */
+
+.diff-date-range {
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 10px;
+    background: var(--bg);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    clear: both;
+}
+
+.diff-content {
+    margin-top: 8px;
+}
+
+.diff-item {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.diff-item h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.diff-tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    vertical-align: middle;
+}
+
+.diff-tag.new {
+    background-color: rgba(0, 180, 90, 0.12);
+    color: #15803d;
+}
+
+.diff-tag.removed {
+    background-color: rgba(220, 53, 69, 0.10);
+    color: #b91c1c;
+}
+
+.diff-tag.changed {
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+}
+
+.diff-detail {
+    font-size: 12px;
+    color: var(--text);
+    margin-top: 3px;
+    line-height: 1.5;
+}
+
+.diff-detail strong {
+    font-weight: 600;
+    color: var(--muted);
+    margin-right: 4px;
+}
