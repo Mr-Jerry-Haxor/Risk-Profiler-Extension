@@ -758,10 +758,6 @@ summary {
     transform: scale(1.2);
 }
 
-.whats-new-icon.hidden {
-    display: none;
-}
-
 /* ====================================================
    SURVEY DIFF MODAL
    ==================================================== */
@@ -797,21 +793,44 @@ summary {
 }
 
 .modal-content h2 {
-    margin-top: 0;
-    margin-bottom: 4px;
+    margin: 0;
     font-size: 16px;
     color: var(--text);
 }
 
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-refresh-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    height: auto;
+}
+
+.modal-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .close-btn {
     color: var(--muted);
-    float: right;
     font-size: 22px;
     font-weight: bold;
     cursor: pointer;
     line-height: 1;
     padding: 0 2px;
     transition: color 0.15s;
+    user-select: none;
 }
 
 .close-btn:hover {
@@ -823,14 +842,17 @@ summary {
    ==================================================== */
 
 .diff-date-range {
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     font-size: 12px;
     color: var(--muted);
     padding: 6px 10px;
     background: var(--bg);
     border-radius: 6px;
     border: 1px solid var(--border);
-    clear: both;
+}
+
+.diff-date-range.hidden {
+    display: none;
 }
 
 .diff-content {
@@ -892,4 +914,21 @@ summary {
     font-weight: 600;
     color: var(--muted);
     margin-right: 4px;
+}
+
+.diff-id {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    font-family: monospace;
+}
+
+.diff-empty {
+    padding: 20px 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    background: var(--bg);
+    border-radius: 6px;
+    border: 1px dashed var(--border);
 }

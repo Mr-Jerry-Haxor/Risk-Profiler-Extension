@@ -1322,98 +1322,139 @@ SURVEY DIFF MODAL
 */
 
 async function setupSurveyDiffUI() {
-    const data = await chrome.storage.local.get("surveyChangesDiff");
-    const diff = data.surveyChangesDiff;
-
-    const icon = $("whatsNewIcon");
-    const modal = $("surveyDiffModal");
+    const icon    = $("whatsNewIcon");
+    const modal   = $("surveyDiffModal");
     const closeBtn = $("closeModalBtn");
-    
+    const refreshBtn = $("refreshDiffBtn");
+
     if (!icon || !modal || !closeBtn) return;
 
-    if (!diff) {
-        icon.classList.add("hidden");
-        return;
-    }
-
-    icon.classList.remove("hidden");
-
-    icon.addEventListener("click", () => {
-        renderSurveyDiff(diff);
+    // Open modal on icon click — always show whatever is in storage (or "no changes")
+    icon.addEventListener("click", async () => {
+        const data = await chrome.storage.local.get("surveyChangesDiff");
+        renderSurveyDiff(data.surveyChangesDiff || null);
         modal.classList.remove("hidden");
     });
 
+    // Close on × button
     closeBtn.addEventListener("click", () => {
         modal.classList.add("hidden");
     });
 
-    window.addEventListener("click", (e) => {
+    // Close on backdrop click
+    modal.addEventListener("click", (e) => {
         if (e.target === modal) {
             modal.classList.add("hidden");
         }
     });
+
+    // Refresh button inside modal
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", async () => {
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = "↻ Refreshing...";
+
+            try {
+                await chrome.runtime.sendMessage({
+                    action: "REFRESH_SURVEY_DIFF"
+                });
+            } catch (e) {
+                console.error("Survey diff refresh error:", e);
+            }
+
+            // Re-read updated storage and re-render
+            const data = await chrome.storage.local.get("surveyChangesDiff");
+            renderSurveyDiff(data.surveyChangesDiff || null);
+
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = "↻ Refresh";
+        });
+    }
 }
 
 function renderSurveyDiff(diff) {
-    const rangeEl = $("diffDateRange");
+    const rangeEl   = $("diffDateRange");
     const contentEl = $("diffContent");
-    
+
     if (!rangeEl || !contentEl) return;
 
-    const oldDate = diff.metadata.hardcodedUpdatedOn ? new Date(diff.metadata.hardcodedUpdatedOn).toLocaleDateString() : "Unknown";
-    const newDate = diff.metadata.latestUpdatedOn ? new Date(diff.metadata.latestUpdatedOn).toLocaleDateString() : "Unknown";
-
-    rangeEl.textContent = `From ${oldDate} to ${newDate}`;
-    
     contentEl.innerHTML = "";
 
+    // No diff stored or no changes found
+    if (
+        !diff ||
+        (diff.newQuestions.length === 0 &&
+         diff.removedQuestions.length === 0 &&
+         diff.modifiedQuestions.length === 0)
+    ) {
+        rangeEl.classList.add("hidden");
+        const empty = document.createElement("div");
+        empty.className = "diff-empty";
+        empty.textContent = "No changes detected between the current and latest survey template.";
+        contentEl.appendChild(empty);
+        return;
+    }
+
+    // Date range bar
+    const oldDate = diff.metadata.hardcodedUpdatedOn
+        ? new Date(diff.metadata.hardcodedUpdatedOn).toLocaleDateString()
+        : "Unknown";
+    const newDate = diff.metadata.latestUpdatedOn
+        ? new Date(diff.metadata.latestUpdatedOn).toLocaleDateString()
+        : "Unknown";
+    rangeEl.textContent = `From ${oldDate} to ${newDate}`;
+    rangeEl.classList.remove("hidden");
+
+    // New questions
     diff.newQuestions.forEach(q => {
         const div = document.createElement("div");
         div.className = "diff-item";
         div.innerHTML = `
-            <h4><span class="diff-tag new">New Question</span> [ID: ${q.alternateQuestionId}]</h4>
-            <div class="diff-detail"><strong>Context:</strong> ${q.questionText}</div>
+            <h4><span class="diff-tag new">New Question</span> <span class="diff-id">[${q.alternateQuestionId}]</span></h4>
+            <div class="diff-detail"><strong>Context:</strong> ${q.questionText || "—"}</div>
         `;
         contentEl.appendChild(div);
     });
 
+    // Removed questions
     diff.removedQuestions.forEach(q => {
         const div = document.createElement("div");
         div.className = "diff-item";
         div.innerHTML = `
-            <h4><span class="diff-tag removed">Removed Question</span> [ID: ${q.alternateQuestionId}]</h4>
-            <div class="diff-detail"><strong>Context:</strong> ${q.questionText}</div>
+            <h4><span class="diff-tag removed">Removed Question</span> <span class="diff-id">[${q.alternateQuestionId}]</span></h4>
+            <div class="diff-detail"><strong>Context:</strong> ${q.questionText || "—"}</div>
         `;
         contentEl.appendChild(div);
     });
 
+    // Modified questions
     diff.modifiedQuestions.forEach(q => {
         const div = document.createElement("div");
         div.className = "diff-item";
-        
-        let tagsHTML = "";
+
+        let tagsHTML    = "";
         let detailsHTML = "";
-        
+
         if (q.textChanged) {
-            tagsHTML += `<span class="diff-tag changed">Question Changed</span>`;
+            tagsHTML    += `<span class="diff-tag changed">Question Changed</span>`;
             detailsHTML += `
                 <div class="diff-detail"><strong>Old:</strong> ${q.textChanged.old}</div>
                 <div class="diff-detail"><strong>New:</strong> ${q.textChanged.new}</div>
             `;
         }
-        
+
         if (q.optionsChanged) {
             tagsHTML += `<span class="diff-tag changed">Options Changed</span>`;
-            if (q.optionsChanged.added && q.optionsChanged.added.length > 0) {
+            if (q.optionsChanged.added?.length > 0) {
                 detailsHTML += `<div class="diff-detail"><strong>Added Options:</strong> ${q.optionsChanged.added.join(", ")}</div>`;
             }
-            if (q.optionsChanged.removed && q.optionsChanged.removed.length > 0) {
+            if (q.optionsChanged.removed?.length > 0) {
                 detailsHTML += `<div class="diff-detail"><strong>Removed Options:</strong> ${q.optionsChanged.removed.join(", ")}</div>`;
             }
         }
 
         div.innerHTML = `
-            <h4>${tagsHTML} [ID: ${q.alternateQuestionId}]</h4>
+            <h4>${tagsHTML} <span class="diff-id">[${q.alternateQuestionId}]</span></h4>
             ${detailsHTML}
         `;
         contentEl.appendChild(div);

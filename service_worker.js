@@ -678,6 +678,28 @@ chrome.runtime.onMessage.addListener(
 
                             break;
 
+                        case "REFRESH_SURVEY_DIFF": {
+
+                            const cached =
+                                await chrome.storage.local.get(
+                                    CONFIG.STORAGE_KEYS.ASSESSMENTS
+                                );
+
+                            const assessments =
+                                cached[CONFIG.STORAGE_KEYS.ASSESSMENTS] || [];
+
+                            await checkSurveyChanges(
+                                assessments
+                            );
+
+                            sendResponse({
+
+                                success: true
+                            });
+
+                            break;
+                        }
+
                         default:
 
                             sendResponse({
