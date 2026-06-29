@@ -3,7 +3,8 @@ import {
     getValues,
     normalize,
     notApplicable,
-    pass
+    pass,
+    isSaas
 }
 from "./helpers.js";
 
@@ -70,6 +71,29 @@ const RP4 = {
             return notApplicable(
                 this.id,
                 "CSIR-AppType is not answered."
+            );
+        }
+
+        if (
+            isSaas(
+                context
+            )
+        ) {
+
+            const deviceCounts =
+                getValues(
+                    context,
+                    "CSIR-DeviceCount"
+                );
+
+            const option =
+                deviceCounts.length > 0
+                    ? deviceCounts[0]
+                    : "not determined";
+
+            return pass(
+                this.id,
+                `SaaS application. Device count: ${option}.`
             );
         }
 
