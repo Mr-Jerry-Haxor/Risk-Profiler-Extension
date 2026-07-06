@@ -18,7 +18,9 @@ export const CONFIG = {
 
         LAST_RUN: "lastRun",
 
-        DEBUG: "debug"
+        DEBUG: "debug",
+
+        WHATS_NEW_MODAL: "whatsNewModalState"
     }
 };
 
