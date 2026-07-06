@@ -467,7 +467,7 @@ h1 {
 
     border: 0;
 
-    background: #0f766e;
+    background: #315fd6;
 
     color: white;
 
@@ -476,7 +476,7 @@ h1 {
 
 .review-action-btn:hover {
 
-    background: #0d625c;
+    background: #294fb3;
 }
 
 .validate-action-btn {
@@ -975,6 +975,8 @@ summary {
 
     display: inline-block;
 
+    margin-bottom: 10px;
+
     padding: 4px 8px;
 
     border-radius: 6px;
@@ -999,6 +1001,20 @@ summary {
     gap: 8px;
 
     margin-bottom: 10px;
+}
+
+.review-output-check-row .review-output-status {
+
+    margin-bottom: 0;
+}
+
+.review-output-divider {
+
+    border: 0;
+
+    border-top: 1px solid #cbd5e1;
+
+    margin: 14px 0;
 }
 
 .review-output-check-row input {
@@ -1105,6 +1121,17 @@ summary {
     text-align: left;
 
     vertical-align: top;
+}
+
+.review-notes-meta table {
+
+    border: 1px solid #9ca3af;
+}
+
+.review-notes-meta th,
+.review-notes-meta td {
+
+    border: 1px solid #9ca3af;
 }
 
 .review-notes-content th {

@@ -46,6 +46,10 @@ let cancellationRequested = false;
 
 let reviewCancellationRequested = false;
 
+let validationStartedAt = null;
+
+let reviewStartedAt = null;
+
 /*
 ====================================================
 HELPERS
@@ -267,6 +271,9 @@ async function runValidationJob(
     currentValidationId =
         createRunId();
 
+    validationStartedAt =
+        Date.now();
+
     try {
 
         await chrome.storage.local.set({
@@ -278,7 +285,24 @@ async function runValidationJob(
                 null,
 
             validationError:
-                null
+                null,
+
+            validationProgress: {
+                runId:
+                    currentValidationId,
+
+                completed:
+                    0,
+
+                total:
+                    assessments.length,
+
+                current:
+                    "Starting validation",
+
+                startedAt:
+                    validationStartedAt
+            }
         });
 
         await updateStatus(
@@ -333,6 +357,9 @@ async function runValidationJob(
                         runId:
                             currentValidationId,
 
+                        startedAt:
+                            validationStartedAt,
+
                         ...progressState
                     });
 
@@ -366,7 +393,27 @@ async function runValidationJob(
                 true,
 
             validationCompletedAt:
-                Date.now()
+                Date.now(),
+
+            validationProgress: {
+                runId:
+                    currentValidationId,
+
+                completed:
+                    assessments.length,
+
+                total:
+                    assessments.length,
+
+                current:
+                    "Validation completed",
+
+                startedAt:
+                    validationStartedAt,
+
+                completedAt:
+                    Date.now()
+            }
         });
 
         await updateStatus(
@@ -416,6 +463,9 @@ async function runReviewJob(
     currentReviewId =
         createRunId();
 
+    reviewStartedAt =
+        Date.now();
+
     try {
 
         await chrome.storage.local.set({
@@ -428,6 +478,23 @@ async function runReviewJob(
 
             reviewError:
                 null,
+
+            reviewProgress: {
+                runId:
+                    currentReviewId,
+
+                completed:
+                    0,
+
+                total:
+                    assessments.length,
+
+                current:
+                    "Starting review",
+
+                startedAt:
+                    reviewStartedAt
+            },
 
             lastAction:
                 "review"
@@ -455,6 +522,9 @@ async function runReviewJob(
                         runId:
                             currentReviewId,
 
+                        startedAt:
+                            reviewStartedAt,
+
                         ...progressState
                     });
 
@@ -481,6 +551,26 @@ async function runReviewJob(
 
             reviewCompletedAt:
                 Date.now(),
+
+            reviewProgress: {
+                runId:
+                    currentReviewId,
+
+                completed:
+                    assessments.length,
+
+                total:
+                    assessments.length,
+
+                current:
+                    "Review completed",
+
+                startedAt:
+                    reviewStartedAt,
+
+                completedAt:
+                    Date.now()
+            },
 
             lastAction:
                 "review"

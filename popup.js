@@ -779,6 +779,17 @@ async function startReview() {
             "hidden"
         );
 
+    renderProgress({
+        completed:
+            0,
+        total:
+            selected.length,
+        current:
+            "Starting validation",
+        startedAt:
+            Date.now()
+    });
+
     $("retryFailedBtn")
         ?.classList.add(
             "hidden"
@@ -825,11 +836,19 @@ function startProgressPolling() {
 
                     "reviewResults",
 
-                    "reviewError"
+                    "reviewError",
+
+                    CONFIG.STORAGE_KEYS.LAST_ACTION
                 ]);
 
+            const lastAction =
+                data[CONFIG.STORAGE_KEYS.LAST_ACTION] ||
+                activeResultsTab;
+
             if (
-                data.validationProgress
+                lastAction === "validation" &&
+                data.validationProgress &&
+                !data.validationComplete
             ) {
 
                 renderProgress(
@@ -869,6 +888,10 @@ function startProgressPolling() {
                         "hidden"
                     );
 
+                renderProgress(
+                    data.validationProgress
+                );
+
                 const failed =
                     await getFailedAssessments();
 
@@ -890,6 +913,7 @@ function startProgressPolling() {
             }
 
             if (
+                lastAction === "review" &&
                 data.reviewProgress &&
                 !data.reviewComplete
             ) {
@@ -919,6 +943,10 @@ function startProgressPolling() {
                 $("reviewBtn").disabled =
                     false;
 
+                renderProgress(
+                    data.reviewProgress
+                );
+
                 $("clearReviewResultsBtn")
                     ?.classList.remove(
                         "hidden"
@@ -926,7 +954,9 @@ function startProgressPolling() {
             }
 
             if (
-                data.validationError
+                lastAction === "validation" &&
+                data.validationError &&
+                !data.validationProgress
             ) {
 
                 $("cancelBtn")
@@ -944,9 +974,6 @@ function startProgressPolling() {
 
                 $("reviewBtn").disabled =
                     false;
-
-                $("progressText").textContent =
-                    data.reviewError;
             }
 
         },
@@ -958,6 +985,13 @@ function renderProgress(
     progress
 ) {
 
+    if (
+        !progress ||
+        !progress.total
+    ) {
+        return;
+    }
+
     const percent =
         Math.round(
             (
@@ -966,13 +1000,75 @@ function renderProgress(
             ) * 100
         );
 
+    const now =
+        progress.completedAt ||
+        Date.now();
+
+    const startedAt =
+        progress.startedAt ||
+        now;
+
+    const elapsedMs =
+        Math.max(
+            0,
+            now - startedAt
+        );
+
+    const isComplete =
+        progress.completed >= progress.total;
+
+    const etaText =
+        !isComplete && progress.completed > 0
+            ? ` • Estimated remaining: ${formatDuration(
+                Math.max(
+                    0,
+                    (
+                        elapsedMs /
+                        progress.completed
+                    ) *
+                    (
+                        progress.total -
+                        progress.completed
+                    )
+                )
+            )}`
+            : !isComplete
+                ? " • Estimated remaining: calculating"
+                : "";
+
     $("progressText").textContent =
 
-        `${progress.completed}/${progress.total}
-         - ${progress.current}`;
+        isComplete
+            ? `${progress.completed} out of ${progress.total} completed • Processing time: ${formatDuration(elapsedMs)}`
+            : `${progress.completed} out of ${progress.total} completed • Time elapsed: ${formatDuration(elapsedMs)}${etaText}`;
 
     $("progressFill").style.width =
         `${percent}%`;
+}
+
+function formatDuration(
+    valueMs
+) {
+
+    const totalSeconds =
+        Math.max(
+            0,
+            Math.round(valueMs / 1000)
+        );
+
+    if (
+        totalSeconds < 60
+    ) {
+        return `${totalSeconds}s`;
+    }
+
+    const minutes =
+        Math.floor(totalSeconds / 60);
+
+    const seconds =
+        totalSeconds % 60;
+
+    return `${minutes}m ${seconds}s`;
 }
 
 /*
@@ -1365,6 +1461,7 @@ async function copyReviewNotes() {
     }
 
     const html =
+        activeReviewNotes.reviewOutputCopyHtml ||
         activeReviewNotes.reviewOutputHtml ||
         activeReviewNotes.notesHtml ||
         "";
@@ -1853,6 +1950,17 @@ async function retryFailedAssessments() {
         ?.classList.remove(
             "hidden"
         );
+
+    renderProgress({
+        completed:
+            0,
+        total:
+            selected.length,
+        current:
+            "Starting review",
+        startedAt:
+            Date.now()
+    });
 
     $("cancelBtn")
         ?.classList.remove(

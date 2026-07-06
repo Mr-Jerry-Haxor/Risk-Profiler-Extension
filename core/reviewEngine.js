@@ -1285,17 +1285,24 @@ function filterReviewContacts(contacts) {
         });
 }
 
-function workQueueHtml(blocks) {
+function workQueueHtml(
+    blocks,
+    {
+        includeCheckbox = false
+    } = {}
+) {
     if (!blocks.length) {
         return "<div class=\"review-output-empty\">No reachable unanswered work queue items were found.</div>";
     }
 
     return blocks.map(block => `
         <section class="review-output-item">
-            <label class="review-output-check-row">
-                <input type="checkbox">
-                <span class="review-output-status">${escapeHtml(block.status)}</span>
-            </label>
+            ${includeCheckbox
+                ? `<label class="review-output-check-row">
+                    <input type="checkbox">
+                    <span class="review-output-status">${escapeHtml(block.status)}</span>
+                </label>`
+                : `<div class="review-output-status">${escapeHtml(block.status)}</div>`}
             <dl>
                 <div>
                     <dt>Category</dt>
@@ -1327,6 +1334,7 @@ function workQueueHtml(blocks) {
                 </div>
             </dl>
         </section>
+        <hr class="review-output-divider">
     `).join("");
 }
 
@@ -1349,6 +1357,16 @@ function buildReviewOutputHtml(result) {
     );
 }
 
+function buildReviewOutputCopyHtml(result) {
+    return workQueueHtml(
+        result.workQueue || [],
+        {
+            includeCheckbox:
+                true
+        }
+    );
+}
+
 function buildReviewOutputText(result) {
     const blocks =
         (result.workQueue || [])
@@ -1364,7 +1382,8 @@ function buildReviewOutputText(result) {
                     ? block.options.map(option =>
                         `${option.index}. ${option.internalValue || option.displayValue || "<no options>"}`
                     )
-                    : ["1. <no options>"])
+                    : ["1. <no options>"]),
+                "----------------------------------------"
             ].join("\n"))
             .join("\n\n") ||
         "No reachable unanswered work queue items were found.";
@@ -1400,7 +1419,7 @@ function buildReviewOutputRtf(result) {
                 `\\b Answer Type:\\b0  ${escapeRtf(block.answerType || "N/A")}\\line `,
                 "\\b Options:\\b0 \\line ",
                 options,
-                "\\line "
+                "\\line \\brdrb\\brdrs\\brdrw10\\pard\\line "
             ].join("");
         }).join("");
 
@@ -1619,6 +1638,9 @@ async function buildReviewResult(
 
     result.reviewOutputHtml =
         buildReviewOutputHtml(result);
+
+    result.reviewOutputCopyHtml =
+        buildReviewOutputCopyHtml(result);
 
     result.reviewOutputText =
         buildReviewOutputText(result);
