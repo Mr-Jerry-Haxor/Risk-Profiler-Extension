@@ -89,6 +89,17 @@ export async function getSurveyTemplateDetails(
     return fetchJson(url);
 }
 
+export async function getRiskProfilerSurveyTemplates() {
+
+    return fetchJson(
+        URLS.SURVEY_TEMPLATES_RP_APP,
+        {
+            useCache:
+                false
+        }
+    );
+}
+
 export async function getAssessmentContext(
     assessmentId
 ) {

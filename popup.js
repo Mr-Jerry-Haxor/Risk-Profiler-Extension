@@ -18,6 +18,21 @@ import {
 }
 from "./export/excelExporter.js";
 
+import {
+    PREREQUISITE_CHECKS
+}
+from "./utils/constants.js";
+
+import {
+    getRiskProfilerSurveyTemplates
+}
+from "./api/cairoApi.js";
+
+import {
+    surveyDifference
+}
+from "./core/surveyDiff.js";
+
 let assessments = [];
 
 let filteredAssessments = [];
@@ -27,6 +42,14 @@ let selectedAssessmentIds = [];
 let validationResults = [];
 
 let resultsRendered = false;
+
+let surveyTemplates = [];
+
+let selectedSurveyFrom = null;
+
+let selectedSurveyTo = null;
+
+let surveyDiffRequestId = 0;
 
 /*
 ====================================================
@@ -233,6 +256,8 @@ function attachEvents() {
             "click",
             exportExcel
         );
+
+    attachPrerequisiteOpenLinks();
 }
 
 /*
@@ -936,6 +961,51 @@ PREREQUISITES
 ====================================================
 */
 
+function attachPrerequisiteOpenLinks() {
+
+    const linksBySite =
+        new Map(
+            PREREQUISITE_CHECKS.map(
+                check => [
+                    check.id,
+                    check.openUrl || check.url
+                ]
+            )
+        );
+
+    document
+        .querySelectorAll(
+            ".prereq-open-link"
+        )
+        .forEach(link => {
+
+            const url =
+                linksBySite.get(
+                    link.dataset.site
+                );
+
+            if (!url) {
+                return;
+            }
+
+            link.href =
+                url;
+
+            link.addEventListener(
+                "click",
+                event => {
+
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    chrome.tabs.create({
+                        url
+                    });
+                }
+            );
+        });
+}
+
 async function loadPrerequisiteStatus() {
 
     const data =
@@ -1326,53 +1396,445 @@ async function setupSurveyDiffUI() {
     const modal   = $("surveyDiffModal");
     const closeBtn = $("closeModalBtn");
     const refreshBtn = $("refreshDiffBtn");
+    const fromInput = $("surveyFromSearch");
+    const toInput = $("surveyToSearch");
+    const runBtn = $("runSurveyDiffBtn");
 
     if (!icon || !modal || !closeBtn) return;
 
-    // Open modal on icon click — always show whatever is in storage (or "no changes")
     icon.addEventListener("click", async () => {
-        const data = await chrome.storage.local.get("surveyChangesDiff");
-        renderSurveyDiff(data.surveyChangesDiff || null);
         modal.classList.remove("hidden");
+        resetSurveyDiffSelection();
+        renderSurveyDiff(null, "Select a From and To version, then click What's New.");
+        await loadSurveyTemplateOptions();
     });
 
-    // Close on × button
     closeBtn.addEventListener("click", () => {
         modal.classList.add("hidden");
     });
 
-    // Close on backdrop click
     modal.addEventListener("click", (e) => {
         if (e.target === modal) {
             modal.classList.add("hidden");
         }
     });
 
-    // Refresh button inside modal
     if (refreshBtn) {
-        refreshBtn.addEventListener("click", async () => {
-            refreshBtn.disabled = true;
-            refreshBtn.textContent = "↻ Refreshing...";
+        refreshBtn.addEventListener(
+            "click",
+            refreshSurveyTemplateOptions
+        );
+    }
 
-            try {
-                await chrome.runtime.sendMessage({
-                    action: "REFRESH_SURVEY_DIFF"
-                });
-            } catch (e) {
-                console.error("Survey diff refresh error:", e);
-            }
+    fromInput?.addEventListener("focus", () => {
+        renderSurveyVersionOptions("from");
+        $("surveyFromOptions")?.classList.remove("hidden");
+    });
 
-            // Re-read updated storage and re-render
-            const data = await chrome.storage.local.get("surveyChangesDiff");
-            renderSurveyDiff(data.surveyChangesDiff || null);
+    fromInput?.addEventListener("input", () => {
+        selectedSurveyFrom = null;
+        selectedSurveyTo = null;
+        if (toInput) {
+            toInput.value = "";
+            toInput.disabled = true;
+            toInput.placeholder = "Select From first";
+        }
+        updateSurveyDiffButton();
+        renderSurveyVersionOptions("from");
+        $("surveyFromOptions")?.classList.remove("hidden");
+    });
 
-            refreshBtn.disabled = false;
-            refreshBtn.textContent = "↻ Refresh";
-        });
+    toInput?.addEventListener("focus", () => {
+        if (selectedSurveyFrom) {
+            renderSurveyVersionOptions("to");
+            $("surveyToOptions")?.classList.remove("hidden");
+        }
+    });
+
+    toInput?.addEventListener("input", () => {
+        selectedSurveyTo = null;
+        updateSurveyDiffButton();
+        renderSurveyVersionOptions("to");
+        $("surveyToOptions")?.classList.remove("hidden");
+    });
+
+    runBtn?.addEventListener("click", runSelectedSurveyDiff);
+
+    document.addEventListener("click", event => {
+        if (!event.target.closest(".survey-combobox")) {
+            $("surveyFromOptions")?.classList.add("hidden");
+            $("surveyToOptions")?.classList.add("hidden");
+        }
+    });
+}
+
+async function refreshSurveyTemplateOptions() {
+    const refreshBtn =
+        $("refreshDiffBtn");
+
+    if (
+        !refreshBtn ||
+        refreshBtn.disabled
+    ) {
+        return;
+    }
+
+    refreshBtn.disabled = true;
+    refreshBtn.setAttribute(
+        "aria-busy",
+        "true"
+    );
+
+    surveyDiffRequestId += 1;
+
+    try {
+        resetSurveyDiffSelection();
+        clearSurveyDiffResults();
+        await loadSurveyTemplateOptions(true);
+    } catch (error) {
+        console.error("Survey template refresh error:", error);
+        renderSurveyDiff(null, "Unable to load survey versions.");
+    } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.removeAttribute(
+            "aria-busy"
+        );
     }
 }
 
-function renderSurveyDiff(diff) {
+function normalizeSurveyTemplates(data) {
+    const values =
+        Array.isArray(data)
+            ? data
+            : Object.values(data || {});
+
+    return values
+        .filter(item =>
+            item &&
+            item.surveyTemplateId &&
+            item.versionNumber !== undefined &&
+            item.versionNumber !== null
+        )
+        .map(item => ({
+            ...item,
+            surveyTemplateId:
+                Number(item.surveyTemplateId),
+            versionNumber:
+                Number(item.versionNumber)
+        }))
+        .filter(item =>
+            !Number.isNaN(item.surveyTemplateId) &&
+            !Number.isNaN(item.versionNumber)
+        )
+        .sort((a, b) =>
+            b.versionNumber - a.versionNumber
+        );
+}
+
+async function loadSurveyTemplateOptions(forceRefresh = false) {
+    if (
+        surveyTemplates.length > 0 &&
+        !forceRefresh
+    ) {
+        renderSurveyVersionOptions("from");
+        return;
+    }
+
+    if (forceRefresh) {
+        surveyTemplates = [];
+    }
+
+    const fromInput =
+        $("surveyFromSearch");
+
+    if (fromInput) {
+        fromInput.placeholder = "Loading versions...";
+        fromInput.disabled = true;
+    }
+
+    try {
+        surveyTemplates =
+            normalizeSurveyTemplates(
+                await getRiskProfilerSurveyTemplates()
+            );
+
+        if (fromInput) {
+            fromInput.disabled = false;
+            fromInput.placeholder = "Search versions...";
+        }
+
+        renderSurveyVersionOptions("from");
+    } catch (error) {
+        console.error("Survey template load error:", error);
+
+        if (fromInput) {
+            fromInput.disabled = false;
+            fromInput.placeholder = "Unable to load versions";
+        }
+
+        throw error;
+    }
+}
+
+function resetSurveyDiffSelection() {
+    selectedSurveyFrom = null;
+    selectedSurveyTo = null;
+
+    const fromInput =
+        $("surveyFromSearch");
+
+    const toInput =
+        $("surveyToSearch");
+
+    if (fromInput) {
+        fromInput.value = "";
+        fromInput.disabled = false;
+        fromInput.placeholder = "Search versions...";
+    }
+
+    if (toInput) {
+        toInput.value = "";
+        toInput.disabled = true;
+        toInput.placeholder = "Select From first";
+    }
+
+    $("surveyFromOptions")?.classList.add("hidden");
+    $("surveyToOptions")?.classList.add("hidden");
+    if ($("surveyFromOptions")) {
+        $("surveyFromOptions").innerHTML = "";
+    }
+    if ($("surveyToOptions")) {
+        $("surveyToOptions").innerHTML = "";
+    }
+    updateSurveyDiffButton();
+}
+
+function clearSurveyDiffResults() {
+    const rangeEl =
+        $("diffDateRange");
+
+    const contentEl =
+        $("diffContent");
+
+    if (rangeEl) {
+        rangeEl.textContent = "";
+        rangeEl.classList.add("hidden");
+    }
+
+    if (contentEl) {
+        contentEl.innerHTML = "";
+    }
+}
+
+function formatSurveyOption(template) {
+    const releaseDate =
+        template.releasedOn
+            ? formatDate(template.releasedOn)
+            : "-";
+
+    const deactivationDate =
+        template.deactivatedOn
+            ? formatDate(template.deactivatedOn)
+            : "-";
+
+    return `V-${template.versionNumber} (REL: ${releaseDate}, DEL: ${deactivationDate})`;
+}
+
+function getSurveyOptions(kind) {
+    if (kind === "to") {
+        if (!selectedSurveyFrom) {
+            return [];
+        }
+
+        return surveyTemplates.filter(
+            template =>
+                template.versionNumber >
+                selectedSurveyFrom.versionNumber
+        );
+    }
+
+    return surveyTemplates;
+}
+
+function renderSurveyVersionOptions(kind) {
+    const input =
+        kind === "from"
+            ? $("surveyFromSearch")
+            : $("surveyToSearch");
+
+    const list =
+        kind === "from"
+            ? $("surveyFromOptions")
+            : $("surveyToOptions");
+
+    if (!input || !list) {
+        return;
+    }
+
+    const query =
+        input.value
+            .trim()
+            .toLowerCase();
+
+    const options =
+        getSurveyOptions(kind)
+            .filter(template =>
+                formatSurveyOption(template)
+                    .toLowerCase()
+                    .includes(query)
+            );
+
+    list.innerHTML = "";
+
+    if (options.length === 0) {
+        const empty =
+            document.createElement("div");
+
+        empty.className =
+            "survey-option-empty";
+
+        empty.textContent =
+            surveyTemplates.length === 0
+                ? "No survey versions found."
+                : "No matching versions.";
+
+        list.appendChild(empty);
+        return;
+    }
+
+    options.forEach(template => {
+        const option =
+            document.createElement("button");
+
+        option.type =
+            "button";
+
+        option.className =
+            "survey-option";
+
+        option.value =
+            String(template.surveyTemplateId);
+
+        option.textContent =
+            formatSurveyOption(template);
+
+        option.addEventListener("click", () => {
+            selectSurveyVersion(kind, template);
+        });
+
+        list.appendChild(option);
+    });
+}
+
+function selectSurveyVersion(kind, template) {
+    if (kind === "from") {
+        selectedSurveyFrom = template;
+        selectedSurveyTo = null;
+
+        const fromInput =
+            $("surveyFromSearch");
+
+        const toInput =
+            $("surveyToSearch");
+
+        if (fromInput) {
+            fromInput.value =
+                formatSurveyOption(template);
+        }
+
+        if (toInput) {
+            toInput.value = "";
+            toInput.disabled = false;
+            toInput.placeholder = "Search newer versions...";
+        }
+
+        $("surveyFromOptions")?.classList.add("hidden");
+        renderSurveyVersionOptions("to");
+    } else {
+        selectedSurveyTo = template;
+
+        const toInput =
+            $("surveyToSearch");
+
+        if (toInput) {
+            toInput.value =
+                formatSurveyOption(template);
+        }
+
+        $("surveyToOptions")?.classList.add("hidden");
+    }
+
+    updateSurveyDiffButton();
+}
+
+function updateSurveyDiffButton() {
+    const runBtn =
+        $("runSurveyDiffBtn");
+
+    if (!runBtn) {
+        return;
+    }
+
+    runBtn.classList.toggle(
+        "hidden",
+        !selectedSurveyFrom || !selectedSurveyTo
+    );
+}
+
+async function runSelectedSurveyDiff() {
+    if (
+        !selectedSurveyFrom ||
+        !selectedSurveyTo
+    ) {
+        return;
+    }
+
+    const runBtn =
+        $("runSurveyDiffBtn");
+
+    const requestId =
+        surveyDiffRequestId + 1;
+
+    surveyDiffRequestId =
+        requestId;
+
+    if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = "Loading...";
+    }
+
+    renderSurveyDiff(null, "Loading changes...");
+
+    try {
+        const diff =
+            await surveyDifference(
+                selectedSurveyFrom.surveyTemplateId,
+                selectedSurveyTo.surveyTemplateId
+            );
+
+        if (
+            requestId ===
+            surveyDiffRequestId
+        ) {
+            renderSurveyDiff(diff);
+        }
+    } catch (error) {
+        console.error("Survey diff error:", error);
+        if (
+            requestId ===
+            surveyDiffRequestId
+        ) {
+            renderSurveyDiff(null, "Unable to load survey differences.");
+        }
+    } finally {
+        if (runBtn) {
+            runBtn.disabled = false;
+            runBtn.textContent = "What's New";
+        }
+    }
+}
+
+function renderSurveyDiff(diff, emptyMessage = "No changes detected between the selected survey templates.") {
     const rangeEl   = $("diffDateRange");
     const contentEl = $("diffContent");
 
@@ -1390,19 +1852,18 @@ function renderSurveyDiff(diff) {
         rangeEl.classList.add("hidden");
         const empty = document.createElement("div");
         empty.className = "diff-empty";
-        empty.textContent = "No changes detected between the current and latest survey template.";
+        empty.textContent = emptyMessage;
         contentEl.appendChild(empty);
         return;
     }
 
-    // Date range bar
-    const oldDate = diff.metadata.hardcodedUpdatedOn
-        ? new Date(diff.metadata.hardcodedUpdatedOn).toLocaleDateString()
+    const oldDate = diff.metadata.fromReleasedOn || diff.metadata.fromUpdatedOn
+        ? formatDate(diff.metadata.fromReleasedOn || diff.metadata.fromUpdatedOn)
         : "Unknown";
-    const newDate = diff.metadata.latestUpdatedOn
-        ? new Date(diff.metadata.latestUpdatedOn).toLocaleDateString()
+    const newDate = diff.metadata.toReleasedOn || diff.metadata.toUpdatedOn
+        ? formatDate(diff.metadata.toReleasedOn || diff.metadata.toUpdatedOn)
         : "Unknown";
-    rangeEl.textContent = `From ${oldDate} to ${newDate}`;
+    rangeEl.textContent = `From V-${diff.metadata.fromVersionNumber || diff.metadata.fromId} (${oldDate}) to V-${diff.metadata.toVersionNumber || diff.metadata.toId} (${newDate})`;
     rangeEl.classList.remove("hidden");
 
     // New questions

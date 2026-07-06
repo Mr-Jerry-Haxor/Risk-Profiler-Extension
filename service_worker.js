@@ -22,11 +22,6 @@ import {
 }
 from "./utils/constants.js";
 
-import {
-    checkSurveyChanges
-}
-from "./core/surveyDiff.js";
-
 /*
 ====================================================
 GLOBAL STATE
@@ -166,12 +161,6 @@ async function refreshAssessments() {
 
         await saveAssessments(
             normalized
-        );
-
-        checkSurveyChanges(
-            normalized
-        ).catch(
-            err => console.error("Survey diff error:", err)
         );
 
         await chrome.storage.local.set({
@@ -677,28 +666,6 @@ chrome.runtime.onMessage.addListener(
                             });
 
                             break;
-
-                        case "REFRESH_SURVEY_DIFF": {
-
-                            const cached =
-                                await chrome.storage.local.get(
-                                    CONFIG.STORAGE_KEYS.ASSESSMENTS
-                                );
-
-                            const assessments =
-                                cached[CONFIG.STORAGE_KEYS.ASSESSMENTS] || [];
-
-                            await checkSurveyChanges(
-                                assessments
-                            );
-
-                            sendResponse({
-
-                                success: true
-                            });
-
-                            break;
-                        }
 
                         default:
 

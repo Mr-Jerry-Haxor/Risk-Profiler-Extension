@@ -264,6 +264,8 @@ h1 {
 
     min-width: 0;
 
+    flex: 1;
+
     flex-direction: column;
 
     gap: 2px;
@@ -283,6 +285,24 @@ h1 {
     text-overflow: ellipsis;
 
     white-space: nowrap;
+}
+
+.prereq-open-link {
+
+    color: var(--muted);
+
+    flex: 0 0 auto;
+
+    font-size: 15px;
+
+    line-height: 1;
+
+    text-decoration: none;
+}
+
+.prereq-open-link:hover {
+
+    color: var(--text);
 }
 
 .signal {
@@ -812,14 +832,76 @@ summary {
 }
 
 .modal-refresh-btn {
-    font-size: 12px;
-    padding: 4px 10px;
-    height: auto;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .modal-refresh-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.survey-version-picker {
+    margin-bottom: 14px;
+}
+
+.survey-combobox {
+    position: relative;
+}
+
+.survey-search-input {
+    margin-bottom: 0;
+}
+
+.survey-option-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 5;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    box-shadow: 0 10px 24px rgba(31, 41, 55, .14);
+}
+
+.survey-option {
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: left;
+}
+
+.survey-option:last-child {
+    border-bottom: 0;
+}
+
+.survey-option:hover,
+.survey-option:focus {
+    background: var(--bg);
+    outline: none;
+}
+
+.survey-option-empty {
+    padding: 12px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.whats-new-run-btn {
+    margin-top: 12px;
+    padding: 11px;
 }
 
 .close-btn {

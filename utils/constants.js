@@ -18,13 +18,9 @@ export const CONFIG = {
 
         LAST_RUN: "lastRun",
 
-        DEBUG: "debug",
-        
-        SURVEY_CHANGES: "surveyChangesDiff"
+        DEBUG: "debug"
     }
 };
-
-export const HARDCODED_SURVEY_TEMPLATE_ID = 524801;
 
 export const URLS = {
 
@@ -39,6 +35,9 @@ export const URLS = {
         
     SURVEY_TEMPLATE_DETAIL:
         "https://cairois.web.boeing.com/api/surveyTemplate/{id}",
+
+    SURVEY_TEMPLATES_RP_APP:
+        "https://cairois.web.boeing.com/api/surveyTemplate?where=alternateSurveyTemplateId:=:rp-app",
 
     REVIEW_SUMMARY:
         "https://cairois.web.boeing.com/api/asset/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6",
@@ -60,6 +59,8 @@ export const PREREQUISITE_CHECKS = [
         name: "Cairo",
         url:
             URLS.PRIMARY_ASSESSMENTS,
+        openUrl:
+            "https://cairois.web.boeing.com/",
         expectedHosts: [
             "cairois.web.boeing.com"
         ]
@@ -70,6 +71,8 @@ export const PREREQUISITE_CHECKS = [
         name: "ESATS",
         url:
             "https://service-gateway.tas-phx.apps.boeing.com/",
+        openUrl:
+            "https://esats.web.boeing.com/",
         expectedHosts: [
             "service-gateway.tas-phx.apps.boeing.com",
             "esats.web.boeing.com"
@@ -81,6 +84,8 @@ export const PREREQUISITE_CHECKS = [
         name: "GTC",
         url:
             "https://termbank.web.boeing.com/",
+        openUrl:
+            "https://gtc-ecm.web.boeing.com/",
         expectedHosts: [
             "termbank.web.boeing.com",
             "gtc-ecm.web.boeing.com"
