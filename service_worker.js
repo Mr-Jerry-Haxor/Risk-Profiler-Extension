@@ -10,11 +10,17 @@ from "./core/batchValidator.js";
 
 import {
     saveAssessments,
+    saveReviewResults,
     saveValidationResults,
     setValue,
     getValue
 }
 from "./storage/storage.js";
+
+import {
+    reviewBatch
+}
+from "./core/reviewEngine.js";
 
 import {
     CONFIG,
@@ -30,9 +36,15 @@ GLOBAL STATE
 
 let validationRunning = false;
 
+let reviewRunning = false;
+
 let currentValidationId = null;
 
+let currentReviewId = null;
+
 let cancellationRequested = false;
+
+let reviewCancellationRequested = false;
 
 /*
 ====================================================
@@ -74,6 +86,39 @@ async function updateError(
     await chrome.storage.local.set({
 
         validationError:
+            error
+    });
+}
+
+async function updateReviewProgress(
+    progress
+) {
+
+    await chrome.storage.local.set({
+
+        reviewProgress:
+            progress
+    });
+}
+
+async function updateReviewStatus(
+    status
+) {
+
+    await chrome.storage.local.set({
+
+        reviewStatus:
+            status
+    });
+}
+
+async function updateReviewError(
+    error
+) {
+
+    await chrome.storage.local.set({
+
+        reviewError:
             error
     });
 }
@@ -120,6 +165,9 @@ async function refreshAssessments() {
 
                     surveyCompletedOn:
                         item.surveyCompletedOn,
+
+                    dueOn:
+                        item.dueOn,
 
                     attestOn:
                         item.attestOn,
@@ -306,6 +354,9 @@ async function runValidationJob(
             validationResults:
                 results,
 
+            lastAction:
+                "validation",
+
             failedAssessments,
 
             assessmentContexts:
@@ -342,6 +393,123 @@ async function runValidationJob(
 
 /*
 ====================================================
+REVIEW JOB
+====================================================
+*/
+
+async function runReviewJob(
+    assessments
+) {
+
+    if (
+        reviewRunning
+    ) {
+
+        throw new Error(
+            "Review already running"
+        );
+    }
+
+    reviewCancellationRequested = false;
+    reviewRunning = true;
+
+    currentReviewId =
+        createRunId();
+
+    try {
+
+        await chrome.storage.local.set({
+
+            reviewComplete:
+                false,
+
+            reviewResults:
+                null,
+
+            reviewError:
+                null,
+
+            lastAction:
+                "review"
+        });
+
+        await updateReviewStatus(
+            "Review started"
+        );
+
+        const results =
+            await reviewBatch(
+
+                assessments,
+
+                async progress => {
+
+                    const {
+                        assessment,
+                        result,
+                        ...progressState
+                    } = progress;
+
+                    await updateReviewProgress({
+
+                        runId:
+                            currentReviewId,
+
+                        ...progressState
+                    });
+
+                    await updateReviewStatus(
+
+                        `Reviewing ${progressState.completed}/${progressState.total}`
+                    );
+                },
+
+                () => reviewCancellationRequested
+            );
+
+        await saveReviewResults(
+            results
+        );
+
+        await chrome.storage.local.set({
+
+            reviewResults:
+                results,
+
+            reviewComplete:
+                true,
+
+            reviewCompletedAt:
+                Date.now(),
+
+            lastAction:
+                "review"
+        });
+
+        await updateReviewStatus(
+            "Review completed"
+        );
+
+        return results;
+
+    } catch (error) {
+
+        console.error(error);
+
+        await updateReviewError(
+            error.message
+        );
+
+        throw error;
+
+    } finally {
+
+        reviewRunning = false;
+    }
+}
+
+/*
+====================================================
 CLEAR RESULTS
 ====================================================
 */
@@ -365,6 +533,24 @@ async function clearValidationData() {
         "failedAssessments",
 
         "assessmentContexts"
+    ]);
+}
+
+async function clearReviewData() {
+
+    await chrome.storage.local.remove([
+
+        "reviewResults",
+
+        CONFIG.STORAGE_KEYS.REVIEWS,
+
+        "reviewProgress",
+
+        "reviewComplete",
+
+        "reviewError",
+
+        "reviewStatus"
     ]);
 }
 
@@ -550,7 +736,11 @@ async function getWorkerStatus() {
 
         validationRunning,
 
+        reviewRunning,
+
         currentValidationId,
+
+        currentReviewId,
 
         lastRefresh:
             await getValue(
@@ -618,6 +808,27 @@ chrome.runtime.onMessage.addListener(
 
                             break;
 
+                        case "START_REVIEW":
+
+                            runReviewJob(
+
+                                message.assessments
+                            ).catch(error => {
+
+                                console.error(
+                                    error
+                                );
+                            });
+
+                            sendResponse({
+
+                                success: true,
+
+                                started: true
+                            });
+
+                            break;
+
                         case "GET_STATUS":
 
                             sendResponse({
@@ -656,9 +867,34 @@ chrome.runtime.onMessage.addListener(
 
                             break;
 
+                        case "STOP_REVIEW":
+
+                            reviewCancellationRequested = true;
+
+                            await updateReviewStatus(
+                                "Review cancellation requested"
+                            );
+
+                            sendResponse({
+                                success:true
+                            });
+
+                            break;
+
                         case "CLEAR_RESULTS":
 
                             await clearValidationData();
+
+                            sendResponse({
+
+                                success: true
+                            });
+
+                            break;
+
+                        case "CLEAR_REVIEW_RESULTS":
+
+                            await clearReviewData();
 
                             sendResponse({
 
@@ -777,7 +1013,9 @@ setInterval(() => {
 
         {
             validationRunning,
-            currentValidationId
+            reviewRunning,
+            currentValidationId,
+            currentReviewId
         }
     );
 

@@ -16,7 +16,11 @@ export const CONFIG = {
 
         VALIDATIONS: "validations",
 
+        REVIEWS: "reviews",
+
         LAST_RUN: "lastRun",
+
+        LAST_ACTION: "lastAction",
 
         DEBUG: "debug",
 
@@ -34,6 +38,12 @@ export const URLS = {
 
     ASSESSMENT_ANSWERS:
         "https://cairois.web.boeing.com/api/assessment/survey/{id}/answers",
+
+    ASSESSMENT_CONTACTS:
+        "https://cairois.web.boeing.com/api/assessment/{id}/contacts",
+
+    SURVEY_TEMPLATE_QUESTIONS:
+        "https://cairois.web.boeing.com/api/survey/template/{id}/questions",
         
     SURVEY_TEMPLATE_DETAIL:
         "https://cairois.web.boeing.com/api/surveyTemplate/{id}",

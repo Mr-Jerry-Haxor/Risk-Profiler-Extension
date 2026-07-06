@@ -96,7 +96,11 @@ h1 {
 
     margin: 4px 0;
 
-    font-size: 24px;
+    max-width: 390px;
+
+    font-size: 18px;
+
+    line-height: 1.2;
 }
 
 .card {
@@ -371,6 +375,11 @@ h1 {
     margin-bottom: 10px;
 }
 
+.date-source-field {
+
+    margin-bottom: 2px;
+}
+
 .grid-2 {
 
     display: grid;
@@ -425,6 +434,31 @@ h1 {
     align-items: center;
 
     gap: 8px;
+
+    flex-wrap: wrap;
+}
+
+.run-actions {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 10px;
+}
+
+.run-actions .btn-primary,
+.run-actions .btn-secondary {
+
+    width: 100%;
+
+    min-height: 44px;
+}
+
+.review-action-btn {
+
+    font-weight: 600;
 }
 
 .assessment-list {
@@ -838,6 +872,238 @@ summary {
     padding: 0;
     font-size: 16px;
     line-height: 1;
+}
+
+.review-notes-modal-content {
+
+    max-width: 620px;
+}
+
+.copy-review-notes-btn {
+
+    width: auto;
+
+    padding: 9px 12px;
+
+    border-radius: 8px;
+
+    font-size: 12px;
+}
+
+.review-notes-content {
+
+    color: var(--text);
+
+    font-size: 13px;
+
+    line-height: 1.5;
+}
+
+.review-notes-content h1 {
+
+    max-width: none;
+
+    margin: 0 0 12px 0;
+
+    font-size: 20px;
+}
+
+.review-notes-content h2 {
+
+    margin: 16px 0 8px 0;
+
+    font-size: 16px;
+}
+
+.review-notes-content h3 {
+
+    margin: 14px 0 8px 0;
+
+    padding: 6px 8px;
+
+    border-radius: 6px;
+
+    background: var(--bg);
+
+    font-size: 13px;
+}
+
+.review-notes-content p {
+
+    margin: 6px 0;
+}
+
+.review-notes-content table {
+
+    width: 100%;
+
+    border-collapse: collapse;
+
+    margin: 8px 0 12px 0;
+}
+
+.review-notes-content th,
+.review-notes-content td {
+
+    border: 1px solid var(--border);
+
+    padding: 7px 8px;
+
+    text-align: left;
+
+    vertical-align: top;
+}
+
+.review-notes-content th {
+
+    background: var(--bg);
+
+    font-weight: 700;
+}
+
+.review-notes-content ol {
+
+    margin: 6px 0 10px 22px;
+
+    padding: 0;
+}
+
+.result-tabs {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 8px;
+
+    margin-bottom: 12px;
+}
+
+.tab-btn {
+
+    border: 1px solid var(--border);
+
+    background: white;
+
+    padding: 10px 12px;
+
+    border-radius: 8px;
+
+    color: var(--muted);
+
+    cursor: pointer;
+
+    font-weight: 700;
+}
+
+.tab-btn.active {
+
+    background: rgba(124, 156, 255, .12);
+
+    border-color: rgba(124, 156, 255, .45);
+
+    color: var(--text);
+}
+
+.review-card {
+
+    padding: 14px;
+
+    border-radius: 8px;
+
+    border: 1px solid var(--border);
+
+    margin-bottom: 10px;
+
+    background: white;
+}
+
+.review-card.status-completed {
+
+    border-color: rgba(135, 215, 163, .7);
+
+    background: #f7fff9;
+}
+
+.review-card.status-incomplete {
+
+    border-color: rgba(255, 215, 154, .9);
+
+    background: #fffaf2;
+}
+
+.review-card-header {
+
+    display: flex;
+
+    align-items: flex-start;
+
+    justify-content: space-between;
+
+    gap: 10px;
+}
+
+.review-card-title {
+
+    min-width: 0;
+
+    font-weight: 700;
+}
+
+.review-card-title span {
+
+    display: block;
+
+    margin-top: 4px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    font-weight: 500;
+}
+
+.review-card-meta {
+
+    margin-top: 10px;
+
+    color: var(--muted);
+
+    display: grid;
+
+    gap: 4px;
+
+    font-size: 12px;
+}
+
+.review-notes-btn {
+
+    flex: 0 0 auto;
+
+    white-space: nowrap;
+}
+
+.review-error {
+
+    margin-top: 10px;
+
+    color: #9b1c1c;
+
+    font-size: 12px;
+}
+
+.review-empty {
+
+    padding: 16px;
+
+    border: 1px dashed var(--border);
+
+    border-radius: 8px;
+
+    color: var(--muted);
+
+    text-align: center;
 }
 
 .modal-refresh-btn:disabled {

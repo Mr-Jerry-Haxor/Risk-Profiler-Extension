@@ -50,6 +50,21 @@ export async function getAssessmentAnswers(
     return fetchJson(url);
 }
 
+export async function getAssessmentContacts(
+    assessmentId
+) {
+
+    const url =
+        replaceTokens(
+            URLS.ASSESSMENT_CONTACTS,
+            {
+                id: assessmentId
+            }
+        );
+
+    return fetchJson(url);
+}
+
 export async function getSurveyQuestions(
     surveyTemplateId
 ) {
@@ -62,7 +77,12 @@ export async function getSurveyQuestions(
     }
 
     const url =
-        `https://cairois.web.boeing.com/api/survey/template/${surveyTemplateId}/questions`;
+        replaceTokens(
+            URLS.SURVEY_TEMPLATE_QUESTIONS,
+            {
+                id: surveyTemplateId
+            }
+        );
 
     return fetchJson(url);
 }

@@ -61,7 +61,10 @@ export function filterAssessments(
                 item => {
 
                     const dateKey =
-                        getAssessmentDateKey(item);
+                        getAssessmentDateKey(
+                            item,
+                            filters.dateFilterField
+                        );
 
                     return !!dateKey &&
                         dateKey >= filters.fromDate;
@@ -78,7 +81,10 @@ export function filterAssessments(
                 item => {
 
                     const dateKey =
-                        getAssessmentDateKey(item);
+                        getAssessmentDateKey(
+                            item,
+                            filters.dateFilterField
+                        );
 
                     return !!dateKey &&
                         dateKey <= filters.toDate;
@@ -129,30 +135,37 @@ export function isIncompleteAssessment(
     );
 }
 
-function getFilterDate(assessment) {
+function getFilterDate(
+    assessment,
+    dateFilterField
+) {
 
     if (
-        isIncompleteAssessment(assessment)
+        dateFilterField === "dueOn"
     ) {
 
         return (
-            assessment.incompleteInitiatedOn ||
-            assessment.raw?.incompleteInitiatedOn
+            assessment.dueOn ||
+            assessment.raw?.dueOn
         );
     }
 
     return (
-        assessment.attestOn ||
         assessment.surveyCompletedOn ||
-        assessment.raw?.attestOn ||
         assessment.raw?.surveyCompletedOn
     );
 }
 
-function getAssessmentDateKey(item) {
+function getAssessmentDateKey(
+    item,
+    dateFilterField
+) {
 
     const value =
-        getFilterDate(item);
+        getFilterDate(
+            item,
+            dateFilterField
+        );
 
     if (
         !value

@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
 
-  "name": "Risk Profiler Validator",
+  "name": "Rest Profiler Review and Validate Automation",
 
   "version": "1.0.0",
 
-  "description": "Risk Profiler Assessment Validation Engine",
+  "description": "Risk Profiler Assessment Review and Validation Engine",
 
   "permissions": [
     "storage",
@@ -39,7 +39,7 @@
   },
 
   "action": {
-    "default_title": "Risk Profiler Validator",
+    "default_title": "Rest Profiler Review and Validate Automation",
     "default_popup": "popup.html"
   }
 }

@@ -80,6 +80,25 @@ export async function getValidationResults() {
     ) || [];
 }
 
+export async function saveReviewResults(
+    results
+) {
+
+    await setValue(
+        CONFIG.STORAGE_KEYS.REVIEWS,
+        results
+    );
+}
+
+export async function getReviewResults() {
+
+    return (
+        await getValue(
+            CONFIG.STORAGE_KEYS.REVIEWS
+        )
+    ) || [];
+}
+
 export async function getFailedAssessments() {
 
     const result =

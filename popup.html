@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Risk Profiler Validator</title>
+    <title>Rest Profiler Review and Validate Automation</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
             </div>
 
             <h1>
-                Validation Dashboard
+                Rest Profiler Review and Validate Automation
             </h1>
         </div>
 
@@ -206,6 +206,25 @@
 
         </div>
 
+        <label class="field-label date-source-field">
+            <span>
+                Date Filter Based On
+            </span>
+
+            <select
+                id="dateFilterField"
+                class="input"
+            >
+                <option value="surveyCompletedOn">
+                    Survey Completed On
+                </option>
+
+                <option value="dueOn">
+                    Due On
+                </option>
+            </select>
+        </label>
+
         <div class="grid-2">
 
             <label class="field-label">
@@ -326,12 +345,23 @@
 
     <section class="card">
 
-        <button
-            id="validateBtn"
-            class="btn-primary"
-        >
-            Validate Selected
-        </button>
+        <div class="run-actions">
+
+            <button
+                id="validateBtn"
+                class="btn-primary"
+            >
+                Validate Selected
+            </button>
+
+            <button
+                id="reviewBtn"
+                class="btn-secondary review-action-btn"
+            >
+                Review Selected
+            </button>
+
+        </div>
 
         <button
             id="cancelBtn"
@@ -380,7 +410,7 @@
         <div class="card-title-row">
 
             <span>
-                Validation Results
+                Results
             </span>
 
             <div class="results-actions">
@@ -399,17 +429,74 @@
                     Export Excel
                 </button>
 
+                <button
+                    id="clearReviewResultsBtn"
+                    class="btn-secondary hidden"
+                >
+                    Clear Results
+                </button>
+
             </div>
+
+        </div>
+
+        <div class="result-tabs">
+
+            <button
+                id="validationTabBtn"
+                class="tab-btn active"
+                data-tab="validation"
+            >
+                Validation Results
+            </button>
+
+            <button
+                id="reviewTabBtn"
+                class="tab-btn"
+                data-tab="review"
+            >
+                Review Results
+            </button>
 
         </div>
 
         <div
             id="resultsContainer"
-            class="results-container"
+            class="results-container result-panel"
+            data-panel="validation"
+        >
+        </div>
+
+        <div
+            id="reviewResultsContainer"
+            class="results-container result-panel hidden"
+            data-panel="review"
         >
         </div>
 
     </section>
+
+    <!-- REVIEW NOTES MODAL -->
+    <div id="reviewNotesModal" class="modal hidden">
+        <div class="modal-content review-notes-modal-content">
+            <div class="modal-header">
+                <h2 id="reviewNotesTitle">Review Notes</h2>
+                <div class="modal-header-actions">
+                    <button
+                        id="copyReviewNotesBtn"
+                        class="btn-primary copy-review-notes-btn"
+                    >
+                        Copy Review Notes
+                    </button>
+                    <span id="closeReviewNotesModalBtn" class="close-btn">&times;</span>
+                </div>
+            </div>
+            <div
+                id="reviewNotesContent"
+                class="review-notes-content"
+            ></div>
+        </div>
+    </div>
 
     <!-- MODAL -->
     <div id="surveyDiffModal" class="modal hidden">

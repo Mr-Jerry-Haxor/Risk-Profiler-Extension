@@ -2,6 +2,7 @@ import {
     getAssessments,
     getContexts,
     getFailedAssessments,
+    getReviewResults,
     getValidationResults
 }
 from "./storage/storage.js";
@@ -42,7 +43,15 @@ let selectedAssessmentIds = [];
 
 let validationResults = [];
 
+let reviewResults = [];
+
 let resultsRendered = false;
+
+let reviewResultsRendered = false;
+
+let activeResultsTab = "validation";
+
+let activeReviewNotes = null;
 
 let surveyTemplates = [];
 
@@ -179,6 +188,12 @@ function attachEvents() {
             applyFilters
         );
 
+    $("dateFilterField")
+        ?.addEventListener(
+            "change",
+            applyFilters
+        );
+
     $("assessmentStatusFilter")
         ?.addEventListener(
             "change",
@@ -227,6 +242,12 @@ function attachEvents() {
             startValidation
         );
 
+    $("reviewBtn")
+        ?.addEventListener(
+            "click",
+            startReview
+        );
+
     $("cancelBtn")
         ?.addEventListener(
             "click",
@@ -252,10 +273,50 @@ function attachEvents() {
             clearValidationResults
         );
 
+    $("clearReviewResultsBtn")
+        ?.addEventListener(
+            "click",
+            clearReviewResults
+        );
+
     $("exportBtn")
         ?.addEventListener(
             "click",
             exportExcel
+        );
+
+    $("validationTabBtn")
+        ?.addEventListener(
+            "click",
+            () => activateResultsTab("validation")
+        );
+
+    $("reviewTabBtn")
+        ?.addEventListener(
+            "click",
+            () => activateResultsTab("review")
+        );
+
+    $("closeReviewNotesModalBtn")
+        ?.addEventListener(
+            "click",
+            closeReviewNotesModal
+        );
+
+    $("reviewNotesModal")
+        ?.addEventListener(
+            "click",
+            event => {
+                if (event.target === $("reviewNotesModal")) {
+                    closeReviewNotesModal();
+                }
+            }
+        );
+
+    $("copyReviewNotesBtn")
+        ?.addEventListener(
+            "click",
+            copyReviewNotes
         );
 
     attachPrerequisiteOpenLinks();
@@ -286,6 +347,10 @@ function applyFilters() {
         toDate:
             $("toDate")
                 ?.value || "",
+
+        dateFilterField:
+            $("dateFilterField")
+                ?.value || "surveyCompletedOn",
 
         assessmentStatus:
             $("assessmentStatusFilter")
@@ -323,6 +388,9 @@ function clearFilters() {
     $("fromDate").value = "";
 
     $("toDate").value = "";
+
+    $("dateFilterField").value =
+        "surveyCompletedOn";
 
     $("assessmentStatusFilter").value = "";
 
@@ -650,6 +718,10 @@ async function startValidation() {
 
     resultsRendered = false;
 
+    activateResultsTab(
+        "validation"
+    );
+
     $("progressContainer")
         ?.classList.remove(
             "hidden"
@@ -669,6 +741,56 @@ async function startValidation() {
 
         action:
             "START_VALIDATION",
+
+        assessments:
+            selected
+    });
+}
+
+async function startReview() {
+
+    const selected =
+        assessments.filter(
+            x =>
+                selectedAssessmentIds.includes(
+                    x.assessmentId
+                )
+        );
+
+    if (
+        selected.length === 0
+    ) {
+
+        alert(
+            "Select at least one assessment."
+        );
+
+        return;
+    }
+
+    reviewResultsRendered = false;
+
+    activateResultsTab(
+        "review"
+    );
+
+    $("progressContainer")
+        ?.classList.remove(
+            "hidden"
+        );
+
+    $("retryFailedBtn")
+        ?.classList.add(
+            "hidden"
+        );
+
+    $("reviewBtn").disabled =
+        true;
+
+    await chrome.runtime.sendMessage({
+
+        action:
+            "START_REVIEW",
 
         assessments:
             selected
@@ -695,7 +817,15 @@ function startProgressPolling() {
 
                     "validationResults",
 
-                    "validationError"
+                    "validationError",
+
+                    "reviewProgress",
+
+                    "reviewComplete",
+
+                    "reviewResults",
+
+                    "reviewError"
                 ]);
 
             if (
@@ -719,6 +849,10 @@ function startProgressPolling() {
                 );
 
                 resultsRendered = true;
+
+                activateResultsTab(
+                    "validation"
+                );
 
                 $("exportBtn")
                     ?.classList.remove(
@@ -756,6 +890,42 @@ function startProgressPolling() {
             }
 
             if (
+                data.reviewProgress &&
+                !data.reviewComplete
+            ) {
+
+                renderProgress(
+                    data.reviewProgress
+                );
+            }
+
+            if (
+                data.reviewComplete && !reviewResultsRendered
+            ) {
+
+                reviewResults =
+                    data.reviewResults || [];
+
+                renderReviewResults(
+                    reviewResults
+                );
+
+                reviewResultsRendered = true;
+
+                activateResultsTab(
+                    "review"
+                );
+
+                $("reviewBtn").disabled =
+                    false;
+
+                $("clearReviewResultsBtn")
+                    ?.classList.remove(
+                        "hidden"
+                    );
+            }
+
+            if (
                 data.validationError
             ) {
 
@@ -766,6 +936,17 @@ function startProgressPolling() {
 
                 $("progressText").textContent =
                     data.validationError;
+            }
+
+            if (
+                data.reviewError
+            ) {
+
+                $("reviewBtn").disabled =
+                    false;
+
+                $("progressText").textContent =
+                    data.reviewError;
             }
 
         },
@@ -800,6 +981,74 @@ RESULTS
 ====================================================
 */
 
+function activateResultsTab(
+    tab
+) {
+
+    activeResultsTab =
+        tab === "review"
+            ? "review"
+            : "validation";
+
+    $("validationTabBtn")
+        ?.classList.toggle(
+            "active",
+            activeResultsTab === "validation"
+        );
+
+    $("reviewTabBtn")
+        ?.classList.toggle(
+            "active",
+            activeResultsTab === "review"
+        );
+
+    $("resultsContainer")
+        ?.classList.toggle(
+            "hidden",
+            activeResultsTab !== "validation"
+        );
+
+    $("reviewResultsContainer")
+        ?.classList.toggle(
+            "hidden",
+            activeResultsTab !== "review"
+        );
+
+    updateResultActionVisibility();
+}
+
+function updateResultActionVisibility() {
+
+    const hasValidationResults =
+        validationResults &&
+        validationResults.length > 0;
+
+    const hasReviewResults =
+        reviewResults &&
+        reviewResults.length > 0;
+
+    $("exportBtn")
+        ?.classList.toggle(
+            "hidden",
+            activeResultsTab !== "validation" ||
+            !hasValidationResults
+        );
+
+    $("clearResultsBtn")
+        ?.classList.toggle(
+            "hidden",
+            activeResultsTab !== "validation" ||
+            !hasValidationResults
+        );
+
+    $("clearReviewResultsBtn")
+        ?.classList.toggle(
+            "hidden",
+            activeResultsTab !== "review" ||
+            !hasReviewResults
+        );
+}
+
 function renderResults(
     results
 ) {
@@ -813,6 +1062,7 @@ function renderResults(
         !results ||
         results.length === 0
     ) {
+        updateResultActionVisibility();
         return;
     }
 
@@ -954,6 +1204,218 @@ function renderResults(
                 }
             );
         });
+
+    updateResultActionVisibility();
+}
+
+function renderReviewResults(
+    results
+) {
+
+    const container =
+        $("reviewResultsContainer");
+
+    container.innerHTML = "";
+
+    if (
+        !results ||
+        results.length === 0
+    ) {
+
+        container.innerHTML =
+            `<div class="review-empty">No review results yet.</div>`;
+
+        updateResultActionVisibility();
+
+        return;
+    }
+
+    results.forEach(
+        result => {
+
+            const card =
+                document.createElement(
+                    "div"
+                );
+
+            const statusClass =
+                result.status === "Incomplete"
+                    ? "status-incomplete"
+                    : "status-completed";
+
+            card.className =
+                `review-card ${statusClass}`;
+
+            const dateRows =
+                result.status === "Incomplete"
+                    ? `
+                        <div><strong>Survey Completed On:</strong> ${result.surveyCompletedOnFormatted || "N/A"}</div>
+                        <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
+                        <div><strong>Incomplete Initiated On:</strong> ${result.incompleteInitiatedOnFormatted || "N/A"}</div>
+                    `
+                    : `
+                        <div><strong>Survey Completed On:</strong> ${result.surveyCompletedOnFormatted || "N/A"}</div>
+                        <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
+                    `;
+
+            card.innerHTML = `
+                <div class="review-card-header">
+                    <div class="review-card-title">
+                        ${result.assetName || "Unknown Assessment"}
+                        <span>Assessment ID: ${result.assessmentId || "N/A"}</span>
+                    </div>
+                    <span class="status-pill ${statusClass}">
+                        ${result.status || "Completed"}
+                    </span>
+                </div>
+                <div class="review-card-meta">
+                    ${dateRows}
+                    <div><strong>Review Items:</strong> ${result.workQueue ? result.workQueue.length : 0}</div>
+                </div>
+                ${result.error
+                    ? `<div class="review-error">${result.error}</div>`
+                    : `<button
+                        class="btn-secondary review-notes-btn"
+                        data-id="${result.assessmentId}"
+                    >
+                        Review Notes
+                    </button>`}
+            `;
+
+            container.appendChild(
+                card
+            );
+        }
+    );
+
+    document
+        .querySelectorAll(
+            ".review-notes-btn"
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => openReviewNotesModal(
+                    button.dataset.id
+                )
+            );
+        });
+
+    updateResultActionVisibility();
+}
+
+function openReviewNotesModal(
+    assessmentId
+) {
+
+    const result =
+        reviewResults.find(
+            item =>
+                String(item.assessmentId) ===
+                String(assessmentId)
+        );
+
+    if (
+        !result ||
+        result.error
+    ) {
+        return;
+    }
+
+    activeReviewNotes =
+        result;
+
+    $("reviewNotesTitle").textContent =
+        result.assetName || "Review Notes";
+
+    $("reviewNotesContent").innerHTML =
+        result.notesHtml || "";
+
+    $("reviewNotesModal")
+        ?.classList.remove(
+            "hidden"
+        );
+}
+
+function closeReviewNotesModal() {
+
+    $("reviewNotesModal")
+        ?.classList.add(
+            "hidden"
+        );
+
+    activeReviewNotes = null;
+}
+
+async function copyReviewNotes() {
+
+    if (
+        !activeReviewNotes
+    ) {
+        return;
+    }
+
+    const html =
+        activeReviewNotes.notesHtml || "";
+
+    const text =
+        activeReviewNotes.notesText ||
+        $("reviewNotesContent")?.innerText ||
+        "";
+
+    try {
+
+        if (
+            navigator.clipboard?.write &&
+            window.ClipboardItem
+        ) {
+
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    "text/html":
+                        new Blob(
+                            [html],
+                            {
+                                type:
+                                    "text/html"
+                            }
+                        ),
+                    "text/plain":
+                        new Blob(
+                            [text],
+                            {
+                                type:
+                                    "text/plain"
+                            }
+                        )
+                })
+            ]);
+
+        } else {
+
+            await navigator.clipboard.writeText(
+                text
+            );
+        }
+
+        $("copyReviewNotesBtn").textContent =
+            "Copied";
+
+        setTimeout(
+            () => {
+                $("copyReviewNotesBtn").textContent =
+                    "Copy Review Notes";
+            },
+            1200
+        );
+
+    } catch {
+
+        await navigator.clipboard.writeText(
+            text
+        );
+    }
 }
 
 /*
@@ -1186,6 +1648,9 @@ async function loadExistingResults() {
     validationResults =
         await getValidationResults();
 
+    reviewResults =
+        await getReviewResults();
+
     if (
         validationResults &&
         validationResults.length
@@ -1207,6 +1672,34 @@ async function loadExistingResults() {
                 "hidden"
             );
     }
+
+    if (
+        reviewResults &&
+        reviewResults.length
+    ) {
+
+        renderReviewResults(
+            reviewResults
+        );
+
+        reviewResultsRendered = true;
+    } else {
+
+        renderReviewResults(
+            []
+        );
+    }
+
+    const stored =
+        await chrome.storage.local.get(
+            CONFIG.STORAGE_KEYS.LAST_ACTION
+        );
+
+    activateResultsTab(
+        stored[CONFIG.STORAGE_KEYS.LAST_ACTION] === "review"
+            ? "review"
+            : "validation"
+    );
 
     const failed =
         await getFailedAssessments();
@@ -1238,16 +1731,6 @@ async function clearValidationResults() {
 
     resultsRendered = false;
 
-    $("exportBtn")
-        ?.classList.add(
-            "hidden"
-        );
-
-    $("clearResultsBtn")
-        ?.classList.add(
-            "hidden"
-        );
-
     $("retryFailedBtn")
         ?.classList.add(
             "hidden"
@@ -1268,6 +1751,30 @@ async function clearValidationResults() {
 
     $("progressText").textContent =
         "Starting...";
+
+    updateResultActionVisibility();
+}
+
+async function clearReviewResults() {
+
+    await chrome.runtime.sendMessage({
+
+        action:
+            "CLEAR_REVIEW_RESULTS"
+    });
+
+    reviewResults = [];
+
+    renderReviewResults(
+        reviewResults
+    );
+
+    reviewResultsRendered = false;
+
+    $("reviewBtn").disabled =
+        false;
+
+    updateResultActionVisibility();
 }
 
 async function retryFailedAssessments() {
