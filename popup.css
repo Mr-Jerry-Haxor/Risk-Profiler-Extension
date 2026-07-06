@@ -1259,10 +1259,6 @@ summary {
 
 .review-notes-btn {
 
-    flex: 0 0 auto;
-
-    margin-top: 12px;
-
     border: 0;
 
     background: #315fd6;
@@ -1277,6 +1273,35 @@ summary {
 .review-notes-btn:hover {
 
     background: #294fb3;
+}
+
+.review-card-actions {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 8px;
+
+    margin-top: 12px;
+}
+
+.download-review-notes-btn {
+
+    border: 1px solid rgba(49, 95, 214, .35);
+
+    background: #f8fbff;
+
+    color: #294fb3;
+
+    font-weight: 700;
+
+    white-space: nowrap;
+}
+
+.download-review-notes-btn:hover {
+
+    background: #e8eefc;
 }
 
 .review-error {

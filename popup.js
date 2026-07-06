@@ -20,6 +20,11 @@ import {
 from "./export/excelExporter.js";
 
 import {
+    downloadReviewNotesDocx
+}
+from "./core/reviewNotesDocx.js";
+
+import {
     CONFIG,
     PREREQUISITE_CHECKS
 }
@@ -1370,12 +1375,20 @@ function renderReviewResults(
                 </div>
                 ${result.error
                     ? `<div class="review-error">${result.error}</div>`
-                    : `<button
-                        class="btn-secondary review-notes-btn"
-                        data-id="${result.assessmentId}"
-                    >
-                        Review Notes
-                    </button>`}
+                    : `<div class="review-card-actions">
+                        <button
+                            class="btn-secondary review-notes-btn"
+                            data-id="${result.assessmentId}"
+                        >
+                            Review Notes
+                        </button>
+                        <button
+                            class="btn-secondary download-review-notes-btn"
+                            data-id="${result.assessmentId}"
+                        >
+                            Download Review Notes
+                        </button>
+                    </div>`}
             `;
 
             container.appendChild(
@@ -1398,7 +1411,44 @@ function renderReviewResults(
             );
         });
 
+    document
+        .querySelectorAll(
+            ".download-review-notes-btn"
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => downloadReviewNotes(
+                    button.dataset.id
+                )
+            );
+        });
+
     updateResultActionVisibility();
+}
+
+async function downloadReviewNotes(
+    assessmentId
+) {
+
+    const result =
+        reviewResults.find(
+            item =>
+                String(item.assessmentId) ===
+                String(assessmentId)
+        );
+
+    if (
+        !result ||
+        result.error
+    ) {
+        return;
+    }
+
+    await downloadReviewNotesDocx(
+        result
+    );
 }
 
 function openReviewNotesModal(
@@ -1424,9 +1474,6 @@ function openReviewNotesModal(
 
     $("reviewNotesTitle").textContent =
         result.assetName || "Review Notes";
-
-    $("copyReviewNotesBtn").textContent =
-        "Copy Review Output";
 
     $("reviewNotesMeta").innerHTML =
         result.notesMetaHtml || "";
