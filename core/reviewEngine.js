@@ -1,4 +1,8 @@
 import {
+    CONFIG
+} from "../utils/constants.js";
+
+import {
     getAssessmentAnswers,
     getAssessmentContacts,
     getAssessmentDetail,
@@ -8,6 +12,12 @@ import {
 } from "../api/cairoApi.js";
 
 const MAX_CONCURRENT_REVIEWS = 3;
+
+const REVIEW_CONTACT_TYPES =
+    new Set([
+        "Responsible Manager",
+        "Primary Contact"
+    ]);
 
 function cleanText(value) {
     if (value === null || value === undefined) {
@@ -1217,6 +1227,14 @@ function escapeHtml(value) {
         .replace(/'/g, "&#39;");
 }
 
+function escapeRtf(value) {
+    return cleanText(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/{/g, "\\{")
+        .replace(/}/g, "\\}")
+        .replace(/\n/g, "\\line ");
+}
+
 function contactsHtml(contacts) {
     if (!contacts.length) {
         return "<p><strong>Contacts:</strong> N/A</p>";
@@ -1244,69 +1262,100 @@ function contactsHtml(contacts) {
     `;
 }
 
+function filterReviewContacts(contacts) {
+    return safeArray(contacts)
+        .filter(contact =>
+            REVIEW_CONTACT_TYPES.has(
+                cleanText(contact?.contactType)
+            )
+        )
+        .sort((a, b) => {
+            const order = {
+                "Responsible Manager":
+                    0,
+                "Primary Contact":
+                    1
+            };
+
+            return (
+                order[cleanText(a?.contactType)] ?? 99
+            ) - (
+                order[cleanText(b?.contactType)] ?? 99
+            );
+        });
+}
+
 function workQueueHtml(blocks) {
     if (!blocks.length) {
-        return "<p><strong>Review Output:</strong> No reachable unanswered work queue items were found.</p>";
+        return "<div class=\"review-output-empty\">No reachable unanswered work queue items were found.</div>";
     }
 
     return blocks.map(block => `
-        <h3>${escapeHtml(block.status)}</h3>
-        <p><strong>Question group:</strong> ${escapeHtml(block.questionGroup)}</p>
-        <p><strong>Question ID:</strong> ${escapeHtml(block.questionId)}</p>
-        <p><strong>Survey Template Question ID:</strong> ${escapeHtml(block.surveyTemplateQuestionId)}</p>
-        <p><strong>Question tags:</strong> ${escapeHtml(block.tags.join(", ") || "N/A")}</p>
-        <p><strong>Category:</strong> ${escapeHtml(block.questionGroup || "N/A")}</p>
-        <p><strong>Question:</strong> ${escapeHtml(block.question)}</p>
-        <p><strong>Question type:</strong> ${escapeHtml(block.questionType || "N/A")}</p>
-        <p><strong>Answer type:</strong> ${escapeHtml(block.answerType)}</p>
-        <p><strong>Options:</strong></p>
-        <ol>
-            ${block.options.length
-                ? block.options.map(option => `
-                    <li>
-                        ${escapeHtml(option.internalValue || option.displayValue || "<no options>")}
-                        ${option.displayValue && option.displayValue !== option.internalValue
-                            ? ` (${escapeHtml(option.displayValue)})`
-                            : ""}
-                    </li>
-                `).join("")
-                : "<li>&lt;no options&gt;</li>"}
-        </ol>
+        <section class="review-output-item">
+            <label class="review-output-check-row">
+                <input type="checkbox">
+                <span class="review-output-status">${escapeHtml(block.status)}</span>
+            </label>
+            <dl>
+                <div>
+                    <dt>Category</dt>
+                    <dd>${escapeHtml(block.questionGroup || "N/A")}</dd>
+                </div>
+                <div>
+                    <dt>Question ID</dt>
+                    <dd>${escapeHtml(block.questionId || "N/A")}</dd>
+                </div>
+                <div>
+                    <dt>Question</dt>
+                    <dd>${escapeHtml(block.question || "N/A")}</dd>
+                </div>
+                <div>
+                    <dt>Answer Type</dt>
+                    <dd>${escapeHtml(block.answerType || "N/A")}</dd>
+                </div>
+                <div>
+                    <dt>Options</dt>
+                    <dd>
+                        <ol>
+                            ${block.options.length
+                                ? block.options.map(option => `
+                                    <li>${escapeHtml(option.internalValue || option.displayValue || "<no options>")}</li>
+                                `).join("")
+                                : "<li>&lt;no options&gt;</li>"}
+                        </ol>
+                    </dd>
+                </div>
+            </dl>
+        </section>
     `).join("");
 }
 
-function buildNotesHtml(result) {
+function buildNotesMetaHtml(result) {
     return `
-        <div class="review-notes-document">
-            <h1>${escapeHtml(result.assetName)}</h1>
+        <div class="review-notes-meta-document">
             ${contactsHtml(result.contacts || [])}
-            <p><strong>Status:</strong> ${escapeHtml(result.status)}</p>
             <p><strong>${result.status === "Incomplete" ? "Due On" : "Survey Completed On"}:</strong> ${escapeHtml(result.status === "Incomplete" ? result.dueOnFormatted : result.surveyCompletedOnFormatted)}</p>
             ${result.status === "Incomplete"
                 ? `<p><strong>Survey Completed On:</strong> ${escapeHtml(result.surveyCompletedOnFormatted || "N/A")}</p>
                    <p><strong>Incomplete Initiated On:</strong> ${escapeHtml(result.incompleteInitiatedOnFormatted || "N/A")}</p>`
                 : `<p><strong>Due On:</strong> ${escapeHtml(result.dueOnFormatted || "N/A")}</p>`}
-            <h2>Review Output</h2>
-            ${workQueueHtml(result.workQueue || [])}
         </div>
     `;
 }
 
-function buildNotesText(result) {
-    const contacts =
-        (result.contacts || [])
-            .map(contact =>
-                `${contact.contactType || "Contact"}: ${contact.associatedTo || "N/A"} <${contact.email || "N/A"}>`
-            )
-            .join("\n") || "N/A";
+function buildReviewOutputHtml(result) {
+    return workQueueHtml(
+        result.workQueue || []
+    );
+}
 
+function buildReviewOutputText(result) {
     const blocks =
         (result.workQueue || [])
             .map(block => [
-                `(${block.status})`,
-                `Question group : ${block.questionGroup}  Question ID: ${block.questionId}`,
-                `Survey Template Question ID: ${block.surveyTemplateQuestionId}`,
-                `Question tags : ${block.tags.join(", ") || "N/A"}`,
+                `[ ] (${block.status})`,
+                `Category : ${block.questionGroup || "N/A"}`,
+                `Question ID : ${block.questionId || "N/A"}`,
                 `Question : ${block.question}`,
                 "",
                 `Answer type : ${block.answerType}`,
@@ -1320,23 +1369,50 @@ function buildNotesText(result) {
             .join("\n\n") ||
         "No reachable unanswered work queue items were found.";
 
-    return [
-        result.assetName,
-        "",
-        "Contact details",
-        contacts,
-        "",
-        `Status: ${result.status}`,
-        `Survey Completed On: ${result.surveyCompletedOnFormatted || "N/A"}`,
-        `Due On: ${result.dueOnFormatted || "N/A"}`,
-        result.status === "Incomplete"
-            ? `Incomplete Initiated On: ${result.incompleteInitiatedOnFormatted || "N/A"}`
-            : "",
-        "",
-        "Review Output",
-        blocks
-    ].filter(line => line !== "")
-        .join("\n");
+    return blocks;
+}
+
+function buildReviewOutputRtf(result) {
+    const blocks =
+        safeArray(result.workQueue);
+
+    if (blocks.length === 0) {
+        return "{\\rtf1\\ansi No reachable unanswered work queue items were found.}";
+    }
+
+    const checkboxField =
+        "{\\field{\\*\\fldinst FORMCHECKBOX}{\\fldrslt }}";
+
+    const body =
+        blocks.map(block => {
+            const options =
+                block.options.length
+                    ? block.options.map(option =>
+                        `\\tab ${option.index}. ${escapeRtf(option.internalValue || option.displayValue || "<no options>")}\\line `
+                    ).join("")
+                    : "\\tab 1. <no options>\\line ";
+
+            return [
+                `${checkboxField} (${escapeRtf(block.status)})\\line `,
+                `\\b Category:\\b0  ${escapeRtf(block.questionGroup || "N/A")}\\line `,
+                `\\b Question ID:\\b0  ${escapeRtf(block.questionId || "N/A")}\\line `,
+                `\\b Question:\\b0  ${escapeRtf(block.question || "N/A")}\\line `,
+                `\\b Answer Type:\\b0  ${escapeRtf(block.answerType || "N/A")}\\line `,
+                "\\b Options:\\b0 \\line ",
+                options,
+                "\\line "
+            ].join("");
+        }).join("");
+
+    return `{\\rtf1\\ansi\\deff0 ${body}}`;
+}
+
+function buildNotesHtml(result) {
+    return `
+        ${buildNotesMetaHtml(result)}
+        <h2>Review Output</h2>
+        ${buildReviewOutputHtml(result)}
+    `;
 }
 
 async function loadQuestionsAndDetail(
@@ -1476,6 +1552,11 @@ async function buildReviewResult(
             newAnswers
         );
 
+    const reviewContacts =
+        filterReviewContacts(
+            contacts
+        );
+
     const result = {
         assessmentId:
             activeAssessmentId,
@@ -1515,7 +1596,7 @@ async function buildReviewResult(
             assessment.raw?.incompleteInitiatedOn ||
             "",
         contacts:
-            safeArray(contacts),
+            reviewContacts,
         workQueue,
         reviewedAt:
             Date.now()
@@ -1533,10 +1614,60 @@ async function buildReviewResult(
     result.notesHtml =
         buildNotesHtml(result);
 
+    result.notesMetaHtml =
+        buildNotesMetaHtml(result);
+
+    result.reviewOutputHtml =
+        buildReviewOutputHtml(result);
+
+    result.reviewOutputText =
+        buildReviewOutputText(result);
+
+    result.reviewOutputRtf =
+        buildReviewOutputRtf(result);
+
     result.notesText =
-        buildNotesText(result);
+        result.reviewOutputText;
 
     return result;
+}
+
+async function getCachedSurveyTemplates() {
+    if (
+        typeof chrome === "undefined" ||
+        !chrome.storage?.local
+    ) {
+        return [];
+    }
+
+    const data =
+        await chrome.storage.local.get(
+            CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL
+        );
+
+    const state =
+        data[CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL] || {};
+
+    return Array.isArray(state.templates)
+        ? state.templates
+        : [];
+}
+
+async function loadReviewSurveyTemplates() {
+    try {
+        return await getRiskProfilerSurveyTemplates();
+    } catch (error) {
+        const cached =
+            await getCachedSurveyTemplates();
+
+        if (
+            cached.length > 0
+        ) {
+            return cached;
+        }
+
+        return [];
+    }
 }
 
 export async function reviewBatch(
@@ -1548,7 +1679,7 @@ export async function reviewBatch(
     let completed = 0;
 
     const surveyTemplates =
-        await getRiskProfilerSurveyTemplates();
+        await loadReviewSurveyTemplates();
 
     for (
         let i = 0;

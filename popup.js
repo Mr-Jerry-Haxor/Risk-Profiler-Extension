@@ -1054,7 +1054,7 @@ function renderResults(
 ) {
 
     const container =
-        $("resultsContainer");
+        $("validationCardsContainer");
 
     container.innerHTML = "";
 
@@ -1213,7 +1213,7 @@ function renderReviewResults(
 ) {
 
     const container =
-        $("reviewResultsContainer");
+        $("reviewCardsContainer");
 
     container.innerHTML = "";
 
@@ -1329,8 +1329,16 @@ function openReviewNotesModal(
     $("reviewNotesTitle").textContent =
         result.assetName || "Review Notes";
 
+    $("copyReviewNotesBtn").textContent =
+        "Copy Review Output";
+
+    $("reviewNotesMeta").innerHTML =
+        result.notesMetaHtml || "";
+
     $("reviewNotesContent").innerHTML =
-        result.notesHtml || "";
+        result.reviewOutputHtml ||
+        result.notesHtml ||
+        "";
 
     $("reviewNotesModal")
         ?.classList.remove(
@@ -1357,11 +1365,18 @@ async function copyReviewNotes() {
     }
 
     const html =
-        activeReviewNotes.notesHtml || "";
+        activeReviewNotes.reviewOutputHtml ||
+        activeReviewNotes.notesHtml ||
+        "";
 
     const text =
+        activeReviewNotes.reviewOutputText ||
         activeReviewNotes.notesText ||
         $("reviewNotesContent")?.innerText ||
+        "";
+
+    const rtf =
+        activeReviewNotes.reviewOutputRtf ||
         "";
 
     try {
@@ -1371,8 +1386,51 @@ async function copyReviewNotes() {
             window.ClipboardItem
         ) {
 
-            await navigator.clipboard.write([
-                new ClipboardItem({
+            const richPayload = {
+                "text/html":
+                    new Blob(
+                        [html],
+                        {
+                            type:
+                                "text/html"
+                        }
+                    ),
+                "text/plain":
+                    new Blob(
+                        [text],
+                        {
+                            type:
+                                "text/plain"
+                        }
+                    )
+            };
+
+            if (
+                rtf
+            ) {
+
+                richPayload["text/rtf"] =
+                    new Blob(
+                        [rtf],
+                        {
+                            type:
+                                "text/rtf"
+                        }
+                    );
+            }
+
+            try {
+
+                await navigator.clipboard.write([
+                    new ClipboardItem(
+                        richPayload
+                    )
+                ]);
+
+            } catch {
+
+                await navigator.clipboard.write([
+                    new ClipboardItem({
                     "text/html":
                         new Blob(
                             [html],
@@ -1389,8 +1447,9 @@ async function copyReviewNotes() {
                                     "text/plain"
                             }
                         )
-                })
-            ]);
+                    })
+                ]);
+            }
 
         } else {
 
@@ -1405,7 +1464,7 @@ async function copyReviewNotes() {
         setTimeout(
             () => {
                 $("copyReviewNotesBtn").textContent =
-                    "Copy Review Notes";
+                    "Copy Review Output";
             },
             1200
         );

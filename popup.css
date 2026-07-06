@@ -438,6 +438,13 @@ h1 {
     flex-wrap: wrap;
 }
 
+.result-panel-actions {
+
+    justify-content: flex-end;
+
+    margin-bottom: 12px;
+}
+
 .run-actions {
 
     display: grid;
@@ -458,7 +465,28 @@ h1 {
 
 .review-action-btn {
 
+    border: 0;
+
+    background: #0f766e;
+
+    color: white;
+
     font-weight: 600;
+}
+
+.review-action-btn:hover {
+
+    background: #0d625c;
+}
+
+.validate-action-btn {
+
+    background: #315fd6;
+}
+
+.validate-action-btn:hover {
+
+    background: #294fb3;
 }
 
 .assessment-list {
@@ -890,6 +918,15 @@ summary {
     font-size: 12px;
 }
 
+.review-notes-meta {
+
+    margin-bottom: 14px;
+
+    padding-bottom: 12px;
+
+    border-bottom: 1px solid var(--border);
+}
+
 .review-notes-content {
 
     color: var(--text);
@@ -897,6 +934,122 @@ summary {
     font-size: 13px;
 
     line-height: 1.5;
+}
+
+.review-notes-content .review-output-item {
+
+    margin-bottom: 14px;
+
+    padding: 12px;
+
+    border: 1px solid var(--border);
+
+    border-left: 4px solid var(--primary);
+
+    border-radius: 8px;
+
+    background: #fbfcff;
+}
+
+.review-output-title-row {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 12px;
+
+    margin-bottom: 10px;
+}
+
+.review-output-title-row h3 {
+
+    margin: 0;
+
+    font-size: 15px;
+}
+
+.review-output-status {
+
+    display: inline-block;
+
+    padding: 4px 8px;
+
+    border-radius: 6px;
+
+    background: rgba(124, 156, 255, .14);
+
+    color: #294fb3;
+
+    font-size: 11px;
+
+    font-weight: 800;
+
+    text-transform: uppercase;
+}
+
+.review-output-check-row {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    margin-bottom: 10px;
+}
+
+.review-output-check-row input {
+
+    width: 16px;
+
+    height: 16px;
+
+    margin: 0;
+}
+
+.review-notes-content dl {
+
+    margin: 0;
+}
+
+.review-notes-content dl > div {
+
+    display: grid;
+
+    grid-template-columns:
+        108px 1fr;
+
+    gap: 10px;
+
+    margin-bottom: 8px;
+}
+
+.review-notes-content dt {
+
+    color: var(--muted);
+
+    font-weight: 700;
+}
+
+.review-notes-content dd {
+
+    margin: 0;
+}
+
+.review-output-empty {
+
+    padding: 14px;
+
+    border: 1px dashed var(--border);
+
+    border-radius: 8px;
+
+    color: var(--muted);
+
+    text-align: center;
 }
 
 .review-notes-content h1 {
@@ -1021,16 +1174,12 @@ summary {
 
 .review-card.status-completed {
 
-    border-color: rgba(135, 215, 163, .7);
-
-    background: #f7fff9;
+    border-left: 4px solid rgba(135, 215, 163, .95);
 }
 
 .review-card.status-incomplete {
 
-    border-color: rgba(255, 215, 154, .9);
-
-    background: #fffaf2;
+    border-left: 4px solid rgba(255, 215, 154, .95);
 }
 
 .review-card-header {
@@ -1081,7 +1230,22 @@ summary {
 
     flex: 0 0 auto;
 
+    margin-top: 12px;
+
+    border: 0;
+
+    background: #315fd6;
+
+    color: white;
+
+    font-weight: 700;
+
     white-space: nowrap;
+}
+
+.review-notes-btn:hover {
+
+    background: #294fb3;
 }
 
 .review-error {
