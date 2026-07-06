@@ -1637,7 +1637,7 @@ function formatSurveyOption(template) {
             ? formatDate(template.deactivatedOn)
             : "-";
 
-    return `V-${template.versionNumber} (REL: ${releaseDate}, DEL: ${deactivationDate})`;
+    return `Version-${template.versionNumber} (Released on: ${releaseDate}, Deactivated on: ${deactivationDate})`;
 }
 
 function getSurveyOptions(kind) {
