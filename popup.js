@@ -19,6 +19,7 @@ import {
 from "./export/excelExporter.js";
 
 import {
+    CONFIG,
     PREREQUISITE_CHECKS
 }
 from "./utils/constants.js";
@@ -1404,9 +1405,13 @@ async function setupSurveyDiffUI() {
 
     icon.addEventListener("click", async () => {
         modal.classList.remove("hidden");
-        resetSurveyDiffSelection();
-        renderSurveyDiff(null, "Select a From and To version, then click What's New.");
-        await loadSurveyTemplateOptions();
+        try {
+            await restoreSurveyDiffModalState();
+        } catch (error) {
+            console.error("Survey diff modal restore error:", error);
+            resetSurveyDiffSelection();
+            renderSurveyDiff(null, "Unable to load survey versions.");
+        }
     });
 
     closeBtn.addEventListener("click", () => {
@@ -1440,6 +1445,15 @@ async function setupSurveyDiffUI() {
             toInput.placeholder = "Select From first";
         }
         updateSurveyDiffButton();
+        clearSurveyDiffResults();
+        saveSurveyDiffModalState({
+            selectedFromId:
+                null,
+            selectedToId:
+                null,
+            diff:
+                null
+        });
         renderSurveyVersionOptions("from");
         $("surveyFromOptions")?.classList.remove("hidden");
     });
@@ -1454,6 +1468,15 @@ async function setupSurveyDiffUI() {
     toInput?.addEventListener("input", () => {
         selectedSurveyTo = null;
         updateSurveyDiffButton();
+        clearSurveyDiffResults();
+        saveSurveyDiffModalState({
+            selectedFromId:
+                selectedSurveyFrom?.surveyTemplateId || null,
+            selectedToId:
+                null,
+            diff:
+                null
+        });
         renderSurveyVersionOptions("to");
         $("surveyToOptions")?.classList.remove("hidden");
     });
@@ -1466,6 +1489,128 @@ async function setupSurveyDiffUI() {
             $("surveyToOptions")?.classList.add("hidden");
         }
     });
+}
+
+async function getStoredSurveyDiffModalState() {
+    const data =
+        await chrome.storage.local.get(
+            CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL
+        );
+
+    return data[CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL] || {};
+}
+
+async function saveSurveyDiffModalState(
+    patch
+) {
+
+    const current =
+        await getStoredSurveyDiffModalState();
+
+    await chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL]: {
+            ...current,
+            ...patch,
+            updatedAt:
+                Date.now()
+        }
+    });
+}
+
+function getSurveyTemplateById(
+    surveyTemplateId
+) {
+
+    return surveyTemplates.find(
+        template =>
+            Number(template.surveyTemplateId) ===
+            Number(surveyTemplateId)
+    ) || null;
+}
+
+function renderSelectedSurveyVersions() {
+    const fromInput =
+        $("surveyFromSearch");
+
+    const toInput =
+        $("surveyToSearch");
+
+    if (fromInput) {
+        fromInput.value =
+            selectedSurveyFrom
+                ? formatSurveyOption(selectedSurveyFrom)
+                : "";
+    }
+
+    if (toInput) {
+        toInput.value =
+            selectedSurveyTo
+                ? formatSurveyOption(selectedSurveyTo)
+                : "";
+
+        toInput.disabled =
+            !selectedSurveyFrom;
+
+        toInput.placeholder =
+            selectedSurveyFrom
+                ? "Search newer versions..."
+                : "Select From first";
+    }
+
+    updateSurveyDiffButton();
+}
+
+async function restoreSurveyDiffModalState() {
+    const state =
+        await getStoredSurveyDiffModalState();
+
+    if (
+        Array.isArray(state.templates) &&
+        state.templates.length > 0
+    ) {
+        surveyTemplates =
+            normalizeSurveyTemplates(
+                state.templates
+            );
+    }
+
+    if (surveyTemplates.length === 0) {
+        resetSurveyDiffSelection();
+        renderSurveyDiff(null, "Loading survey versions...");
+        await loadSurveyTemplateOptions();
+    }
+
+    selectedSurveyFrom =
+        state.selectedFromId
+            ? getSurveyTemplateById(state.selectedFromId)
+            : null;
+
+    selectedSurveyTo =
+        state.selectedToId
+            ? getSurveyTemplateById(state.selectedToId)
+            : null;
+
+    if (
+        selectedSurveyFrom &&
+        selectedSurveyTo &&
+        selectedSurveyTo.versionNumber <=
+            selectedSurveyFrom.versionNumber
+    ) {
+        selectedSurveyTo = null;
+    }
+
+    renderSelectedSurveyVersions();
+    renderSurveyVersionOptions("from");
+
+    if (
+        state.diff &&
+        selectedSurveyFrom &&
+        selectedSurveyTo
+    ) {
+        renderSurveyDiff(state.diff);
+    } else {
+        renderSurveyDiff(null, "Select a From and To version, then click What's New.");
+    }
 }
 
 async function refreshSurveyTemplateOptions() {
@@ -1490,6 +1635,16 @@ async function refreshSurveyTemplateOptions() {
     try {
         resetSurveyDiffSelection();
         clearSurveyDiffResults();
+        await saveSurveyDiffModalState({
+            selectedFromId:
+                null,
+            selectedToId:
+                null,
+            diff:
+                null,
+            templates:
+                []
+        });
         await loadSurveyTemplateOptions(true);
     } catch (error) {
         console.error("Survey template refresh error:", error);
@@ -1540,6 +1695,24 @@ async function loadSurveyTemplateOptions(forceRefresh = false) {
         return;
     }
 
+    if (!forceRefresh) {
+        const state =
+            await getStoredSurveyDiffModalState();
+
+        if (
+            Array.isArray(state.templates) &&
+            state.templates.length > 0
+        ) {
+            surveyTemplates =
+                normalizeSurveyTemplates(
+                    state.templates
+                );
+
+            renderSurveyVersionOptions("from");
+            return;
+        }
+    }
+
     if (forceRefresh) {
         surveyTemplates = [];
     }
@@ -1557,6 +1730,11 @@ async function loadSurveyTemplateOptions(forceRefresh = false) {
             normalizeSurveyTemplates(
                 await getRiskProfilerSurveyTemplates()
             );
+
+        await saveSurveyDiffModalState({
+            templates:
+                surveyTemplates
+        });
 
         if (fromInput) {
             fromInput.disabled = false;
@@ -1750,6 +1928,15 @@ function selectSurveyVersion(kind, template) {
 
         $("surveyFromOptions")?.classList.add("hidden");
         renderSurveyVersionOptions("to");
+        clearSurveyDiffResults();
+        saveSurveyDiffModalState({
+            selectedFromId:
+                template.surveyTemplateId,
+            selectedToId:
+                null,
+            diff:
+                null
+        });
     } else {
         selectedSurveyTo = template;
 
@@ -1762,6 +1949,15 @@ function selectSurveyVersion(kind, template) {
         }
 
         $("surveyToOptions")?.classList.add("hidden");
+        clearSurveyDiffResults();
+        saveSurveyDiffModalState({
+            selectedFromId:
+                selectedSurveyFrom?.surveyTemplateId || null,
+            selectedToId:
+                template.surveyTemplateId,
+            diff:
+                null
+        });
     }
 
     updateSurveyDiffButton();
@@ -1803,9 +1999,23 @@ async function runSelectedSurveyDiff() {
         runBtn.textContent = "Loading...";
     }
 
-    renderSurveyDiff(null, "Loading changes...");
-
     try {
+        const cachedState =
+            await getStoredSurveyDiffModalState();
+
+        if (
+            cachedState.diff &&
+            Number(cachedState.selectedFromId) ===
+                Number(selectedSurveyFrom.surveyTemplateId) &&
+            Number(cachedState.selectedToId) ===
+                Number(selectedSurveyTo.surveyTemplateId)
+        ) {
+            renderSurveyDiff(cachedState.diff);
+            return;
+        }
+
+        renderSurveyDiff(null, "Loading changes...");
+
         const diff =
             await surveyDifference(
                 selectedSurveyFrom.surveyTemplateId,
@@ -1817,6 +2027,13 @@ async function runSelectedSurveyDiff() {
             surveyDiffRequestId
         ) {
             renderSurveyDiff(diff);
+            await saveSurveyDiffModalState({
+                selectedFromId:
+                    selectedSurveyFrom.surveyTemplateId,
+                selectedToId:
+                    selectedSurveyTo.surveyTemplateId,
+                diff
+            });
         }
     } catch (error) {
         console.error("Survey diff error:", error);
