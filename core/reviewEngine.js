@@ -1262,6 +1262,18 @@ function contactsHtml(contacts) {
     `;
 }
 
+function checkboxCopyHtml() {
+    return `<span style="font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 13px; font-weight: normal;">&#9744;</span><input type="checkbox" style="margin: 0 6px 0 0; width: 13px; height: 13px;">`;
+}
+
+function optionText(option) {
+    return cleanText(
+        option?.internalValue ||
+        option?.displayValue ||
+        "<no options>"
+    );
+}
+
 function filterReviewContacts(contacts) {
     return safeArray(contacts)
         .filter(contact =>
@@ -1288,54 +1300,75 @@ function filterReviewContacts(contacts) {
 function workQueueHtml(
     blocks,
     {
-        includeCheckbox = false
+        includeCheckbox = false,
+        inlineStyles = false
     } = {}
 ) {
     if (!blocks.length) {
-        return "<div class=\"review-output-empty\">No reachable unanswered work queue items were found.</div>";
+        return inlineStyles
+            ? "<div style=\"padding: 12px; border: 1px dashed #cbd5e1; color: #6b7280;\">No reachable unanswered work queue items were found.</div>"
+            : "<div class=\"review-output-empty\">No reachable unanswered work queue items were found.</div>";
     }
 
-    return blocks.map(block => `
-        <section class="review-output-item">
-            ${includeCheckbox
-                ? `<label class="review-output-check-row">
-                    <input type="checkbox">
-                    <span class="review-output-status">${escapeHtml(block.status)}</span>
-                </label>`
-                : `<div class="review-output-status">${escapeHtml(block.status)}</div>`}
-            <dl>
-                <div>
-                    <dt>Category</dt>
-                    <dd>${escapeHtml(block.questionGroup || "N/A")}</dd>
-                </div>
-                <div>
-                    <dt>Question ID</dt>
-                    <dd>${escapeHtml(block.questionId || "N/A")}</dd>
-                </div>
-                <div>
-                    <dt>Question</dt>
-                    <dd>${escapeHtml(block.question || "N/A")}</dd>
-                </div>
-                <div>
-                    <dt>Answer Type</dt>
-                    <dd>${escapeHtml(block.answerType || "N/A")}</dd>
-                </div>
-                <div>
-                    <dt>Options</dt>
-                    <dd>
-                        <ol>
-                            ${block.options.length
-                                ? block.options.map(option => `
-                                    <li>${escapeHtml(option.internalValue || option.displayValue || "<no options>")}</li>
-                                `).join("")
-                                : "<li>&lt;no options&gt;</li>"}
+    return blocks.map(block => {
+        const options =
+            block.options.length
+                ? block.options.map(option => inlineStyles
+                    ? `<li style="margin: 3px 0;">${includeCheckbox ? `${checkboxCopyHtml()} ` : ""}${escapeHtml(optionText(option))}</li>`
+                    : `<li>${escapeHtml(optionText(option))}</li>`
+                ).join("")
+                : inlineStyles
+                    ? `<li style="margin: 3px 0;">${includeCheckbox ? `${checkboxCopyHtml()} ` : ""}&lt;no options&gt;</li>`
+                    : "<li>&lt;no options&gt;</li>";
+
+        if (inlineStyles) {
+            return `
+                <div style="margin: 0 0 14px 0; padding: 12px; border: 1px solid #d1d5db; border-left: 4px solid #315fd6; border-radius: 6px; font-family: Arial, sans-serif; font-size: 11pt; color: #1f2937;">
+                    <div style="margin-bottom: 8px;">
+                        ${includeCheckbox ? `${checkboxCopyHtml()} ` : ""}
+                        <span style="display: inline-block; padding: 3px 7px; border-radius: 4px; background: #e8eefc; color: #294fb3; font-size: 9pt; font-weight: bold;">${escapeHtml(block.status)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; gap: 24px; margin-bottom: 8px;">
+                        <div style="white-space: nowrap;"><strong>Category:</strong> <span>${escapeHtml(block.questionGroup || "N/A")}</span></div>
+                        <div style="white-space: nowrap; text-align: right;"><strong>Question ID:</strong> <span>${escapeHtml(block.questionId || "N/A")}</span></div>
+                    </div>
+                    <div style="margin-bottom: 6px;"><strong>Question:</strong> <span>${escapeHtml(block.question || "N/A")}</span></div>
+                    <div style="margin-bottom: 6px;"><strong>Answer Type:</strong> <span>${escapeHtml(block.answerType || "N/A")}</span></div>
+                    <div><strong>Options:</strong>
+                        <ol style="margin: 5px 0 0 20px; padding: 0;">
+                            ${options}
                         </ol>
-                    </dd>
+                    </div>
                 </div>
-            </dl>
-        </section>
-        <hr class="review-output-divider">
-    `).join("");
+                <hr style="border: 0; border-top: 1px solid #9ca3af; margin: 14px 0;">
+            `;
+        }
+
+        return `
+            <section class="review-output-item">
+                <div class="review-output-status">${escapeHtml(block.status)}</div>
+                <div class="review-output-id-row">
+                    <div><strong>Category:</strong> <span>${escapeHtml(block.questionGroup || "N/A")}</span></div>
+                    <div><strong>Question ID:</strong> <span>${escapeHtml(block.questionId || "N/A")}</span></div>
+                </div>
+                <div class="review-output-field">
+                    <strong>Question:</strong>
+                    <span>${escapeHtml(block.question || "N/A")}</span>
+                </div>
+                <div class="review-output-field">
+                    <strong>Answer Type:</strong>
+                    <span>${escapeHtml(block.answerType || "N/A")}</span>
+                </div>
+                <div class="review-output-field">
+                    <strong>Options:</strong>
+                    <ol>
+                        ${options}
+                    </ol>
+                </div>
+            </section>
+            <hr class="review-output-divider">
+        `;
+    }).join("");
 }
 
 function buildNotesMetaHtml(result) {
@@ -1362,6 +1395,8 @@ function buildReviewOutputCopyHtml(result) {
         result.workQueue || [],
         {
             includeCheckbox:
+                true,
+            inlineStyles:
                 true
         }
     );
@@ -1380,9 +1415,9 @@ function buildReviewOutputText(result) {
                 "Options :",
                 ...(block.options.length
                     ? block.options.map(option =>
-                        `${option.index}. ${option.internalValue || option.displayValue || "<no options>"}`
+                        `${option.index}. [ ] ${optionText(option)}`
                     )
-                    : ["1. <no options>"]),
+                    : ["1. [ ] <no options>"]),
                 "----------------------------------------"
             ].join("\n"))
             .join("\n\n") ||
@@ -1407,14 +1442,13 @@ function buildReviewOutputRtf(result) {
             const options =
                 block.options.length
                     ? block.options.map(option =>
-                        `\\tab ${option.index}. ${escapeRtf(option.internalValue || option.displayValue || "<no options>")}\\line `
+                        `\\tab ${option.index}. ${checkboxField} \\u9744? ${escapeRtf(optionText(option))}\\line `
                     ).join("")
-                    : "\\tab 1. <no options>\\line ";
+                    : `\\tab 1. ${checkboxField} \\u9744? <no options>\\line `;
 
             return [
                 `${checkboxField} (${escapeRtf(block.status)})\\line `,
-                `\\b Category:\\b0  ${escapeRtf(block.questionGroup || "N/A")}\\line `,
-                `\\b Question ID:\\b0  ${escapeRtf(block.questionId || "N/A")}\\line `,
+                `\\b Category:\\b0  ${escapeRtf(block.questionGroup || "N/A")}\\tab \\b Question ID:\\b0  ${escapeRtf(block.questionId || "N/A")}\\line `,
                 `\\b Question:\\b0  ${escapeRtf(block.question || "N/A")}\\line `,
                 `\\b Answer Type:\\b0  ${escapeRtf(block.answerType || "N/A")}\\line `,
                 "\\b Options:\\b0 \\line ",

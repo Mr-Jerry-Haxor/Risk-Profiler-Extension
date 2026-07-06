@@ -1466,6 +1466,9 @@ async function copyReviewNotes() {
         activeReviewNotes.notesHtml ||
         "";
 
+    const htmlDocument =
+        `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
+
     const text =
         activeReviewNotes.reviewOutputText ||
         activeReviewNotes.notesText ||
@@ -1486,7 +1489,7 @@ async function copyReviewNotes() {
             const richPayload = {
                 "text/html":
                     new Blob(
-                        [html],
+                        [htmlDocument],
                         {
                             type:
                                 "text/html"
@@ -1530,7 +1533,7 @@ async function copyReviewNotes() {
                     new ClipboardItem({
                     "text/html":
                         new Blob(
-                            [html],
+                            [htmlDocument],
                             {
                                 type:
                                     "text/html"

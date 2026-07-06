@@ -463,22 +463,6 @@ h1 {
     min-height: 44px;
 }
 
-.review-action-btn {
-
-    border: 0;
-
-    background: #315fd6;
-
-    color: white;
-
-    font-weight: 600;
-}
-
-.review-action-btn:hover {
-
-    background: #294fb3;
-}
-
 .validate-action-btn {
 
     background: #315fd6;
@@ -1026,35 +1010,6 @@ summary {
     margin: 0;
 }
 
-.review-notes-content dl {
-
-    margin: 0;
-}
-
-.review-notes-content dl > div {
-
-    display: grid;
-
-    grid-template-columns:
-        108px 1fr;
-
-    gap: 10px;
-
-    margin-bottom: 8px;
-}
-
-.review-notes-content dt {
-
-    color: var(--muted);
-
-    font-weight: 700;
-}
-
-.review-notes-content dd {
-
-    margin: 0;
-}
-
 .review-output-empty {
 
     padding: 14px;
@@ -1066,6 +1021,55 @@ summary {
     color: var(--muted);
 
     text-align: center;
+}
+
+.review-output-id-row {
+
+    display: flex;
+
+    align-items: flex-start;
+
+    justify-content: space-between;
+
+    gap: 24px;
+
+    margin-bottom: 8px;
+}
+
+.review-output-id-row > div {
+
+    min-width: 0;
+}
+
+.review-output-id-row > div:first-child {
+
+    flex: 1 1 auto;
+}
+
+.review-output-id-row > div:last-child {
+
+    flex: 0 0 auto;
+
+    text-align: right;
+}
+
+.review-output-field {
+
+    margin-bottom: 8px;
+}
+
+.review-output-field strong,
+.review-output-id-row strong {
+
+    color: var(--muted);
+}
+
+.review-output-field ol {
+
+    margin:
+        6px 0 0 22px;
+
+    padding: 0;
 }
 
 .review-notes-content h1 {
