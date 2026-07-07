@@ -814,14 +814,35 @@ summary {
     cursor: pointer;
     margin-left: 8px;
     font-size: 15px;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     vertical-align: middle;
-    transition: transform 0.15s ease;
+    padding: 5px 9px;
+    border: 1px solid rgba(244, 164, 164, .7);
+    border-radius: 999px;
+    background: #fff1f2;
+    color: #9f1239;
+    font-weight: 800;
+    line-height: 1;
+    transition:
+        background .15s ease,
+        border-color .15s ease,
+        box-shadow .15s ease,
+        transform .15s ease;
     user-select: none;
 }
 
 .whats-new-icon:hover {
-    transform: scale(1.2);
+    background: #ffe4e6;
+    border-color: rgba(244, 164, 164, .95);
+    box-shadow: 0 2px 6px rgba(159, 18, 57, .14);
+    transform: translateY(-1px);
+}
+
+.whats-new-icon:focus-visible {
+    outline: 2px solid rgba(159, 18, 57, .35);
+    outline-offset: 2px;
 }
 
 /* ====================================================
