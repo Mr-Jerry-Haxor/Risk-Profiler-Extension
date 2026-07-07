@@ -4,7 +4,7 @@ import {
 
 import {
     getAssessmentAnswers,
-    getAssessmentContacts,
+    getBusinessApplicationContactDetailsSummary,
     getAssessmentDetail,
     getRiskProfilerSurveyTemplates,
     getSurveyQuestions,
@@ -13,10 +13,10 @@ import {
 
 const MAX_CONCURRENT_REVIEWS = 3;
 
-const REVIEW_CONTACT_TYPES =
+const REVIEW_CONTACT_ROLES =
     new Set([
-        "Responsible Manager",
-        "Primary Contact"
+        "ApplicationManager",
+        "BusinessSystemManager"
     ]);
 
 function cleanText(value) {
@@ -1276,23 +1276,51 @@ function optionText(option) {
 
 function filterReviewContacts(contacts) {
     return safeArray(contacts)
-        .filter(contact =>
-            REVIEW_CONTACT_TYPES.has(
-                cleanText(contact?.contactType)
+        .filter(contactGroup =>
+            REVIEW_CONTACT_ROLES.has(
+                cleanText(contactGroup?.roleType?.name)
             )
         )
+        .flatMap(contactGroup => {
+            const roleType =
+                contactGroup.roleType || {};
+
+            const users =
+                safeArray(contactGroup.users).length
+                    ? safeArray(contactGroup.users)
+                    : contactGroup.user
+                        ? [contactGroup.user]
+                        : [];
+
+            return users.map(user => ({
+                contactType:
+                    roleType.displayName ||
+                    roleType.name ||
+                    "N/A",
+                associatedTo:
+                    user?.name || "N/A",
+                associatedToIdentityId:
+                    user?.bemsId ||
+                    user?.id ||
+                    "N/A",
+                email:
+                    user?.email || "N/A",
+                roleName:
+                    roleType.name || ""
+            }));
+        })
         .sort((a, b) => {
             const order = {
-                "Responsible Manager":
+                ApplicationManager:
                     0,
-                "Primary Contact":
+                BusinessSystemManager:
                     1
             };
 
             return (
-                order[cleanText(a?.contactType)] ?? 99
+                order[cleanText(a?.roleName)] ?? 99
             ) - (
-                order[cleanText(b?.contactType)] ?? 99
+                order[cleanText(b?.roleName)] ?? 99
             );
         });
 }
@@ -1537,8 +1565,8 @@ async function buildReviewResult(
         getAssessmentAnswers(
             lastAssessmentId
         ),
-        getAssessmentContacts(
-            activeAssessmentId
+        getBusinessApplicationContactDetailsSummary(
+            assessment.assetId
         ).catch(() => [])
     ]);
 
@@ -1547,25 +1575,13 @@ async function buildReviewResult(
     let selectedLatestTemplate = null;
 
     if (incompleteAssessmentId) {
-        const [
-            incompleteContext,
-            incompleteAnswersRaw
-        ] = await Promise.all([
-            loadQuestionsAndDetail(
+        const incompleteContext =
+            await loadQuestionsAndDetail(
                 incompleteAssessmentId
-            ),
-            getAssessmentAnswers(
-                incompleteAssessmentId
-            )
-        ]);
+            );
 
         newContext =
             incompleteContext;
-
-        newAnswers =
-            loadAnswerList(
-                incompleteAnswersRaw
-            );
     } else {
         selectedLatestTemplate =
             findLatestReleasedTemplate(

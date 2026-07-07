@@ -255,7 +255,7 @@ function contactsTable(
         contacts.length === 0
     ) {
         return paragraph([
-            run("No Responsible Manager or Primary Contact details were found.")
+            run("No Application Manager or Business System Manager details were found.")
         ]);
     }
 

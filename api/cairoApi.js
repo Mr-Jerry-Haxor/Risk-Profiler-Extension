@@ -65,6 +65,21 @@ export async function getAssessmentContacts(
     return fetchJson(url);
 }
 
+export async function getBusinessApplicationContactDetailsSummary(
+    assetId
+) {
+
+    const url =
+        replaceTokens(
+            URLS.ESATS_CONTACT_DETAILS_SUMMARY,
+            {
+                assetId
+            }
+        );
+
+    return fetchJson(url);
+}
+
 export async function getSurveyQuestions(
     surveyTemplateId
 ) {

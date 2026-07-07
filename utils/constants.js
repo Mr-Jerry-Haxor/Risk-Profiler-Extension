@@ -60,6 +60,9 @@ export const URLS = {
     ESATS_ARTIFACTS:
         "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}",
 
+    ESATS_CONTACT_DETAILS_SUMMARY:
+        "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}",
+
     GTC_LOOKUP:
         "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/{name}.json"
 };

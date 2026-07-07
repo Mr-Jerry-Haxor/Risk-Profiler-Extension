@@ -506,6 +506,13 @@ h1 {
     flex: 1;
 }
 
+.manager-search-select {
+
+    display: grid;
+
+    gap: 6px;
+}
+
 .asset-name {
 
     font-weight: 600;
@@ -1253,12 +1260,14 @@ summary {
     color: var(--muted);
 }
 
-.review-output-field ol {
+.review-output-field ul {
 
     margin:
-        6px 0 0 22px;
+        6px 0 0 0;
 
     padding: 0;
+
+    list-style: none;
 }
 
 .review-notes-content h1 {

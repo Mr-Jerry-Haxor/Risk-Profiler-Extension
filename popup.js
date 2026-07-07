@@ -44,6 +44,8 @@ let assessments = [];
 
 let filteredAssessments = [];
 
+let applicationManagers = [];
+
 let selectedAssessmentIds = [];
 
 let validationResults = [];
@@ -136,7 +138,7 @@ function populateOwnerFilter() {
     if (!ownerFilter)
         return;
 
-    const owners =
+    applicationManagers =
         [
             ...new Set(
                 assessments.map(
@@ -147,6 +149,42 @@ function populateOwnerFilter() {
         ]
         .filter(Boolean)
         .sort();
+
+    renderOwnerOptions(
+        applicationManagers
+    );
+}
+
+function renderOwnerOptions(
+    owners
+) {
+
+    const ownerFilter =
+        $("ownerFilter");
+
+    if (!ownerFilter)
+        return;
+
+    const selectedOwner =
+        ownerFilter.value;
+
+    ownerFilter.innerHTML =
+        "";
+
+    const allOption =
+        document.createElement(
+            "option"
+        );
+
+    allOption.value =
+        "";
+
+    allOption.textContent =
+        "All Application Managers";
+
+    ownerFilter.appendChild(
+        allOption
+    );
 
     owners.forEach(owner => {
 
@@ -165,6 +203,57 @@ function populateOwnerFilter() {
             option
         );
     });
+
+    if (
+        selectedOwner &&
+        owners.includes(
+            selectedOwner
+        )
+    ) {
+
+        ownerFilter.value =
+            selectedOwner;
+    }
+}
+
+function getOwnerSearchRegex() {
+
+    const pattern =
+        $("ownerSearchInput")
+            ?.value
+            ?.trim() || "";
+
+    if (!pattern)
+        return null;
+
+    try {
+
+        return new RegExp(
+            pattern,
+            "i"
+        );
+    } catch {
+
+        return null;
+    }
+}
+
+function updateOwnerOptions() {
+
+    const regex =
+        getOwnerSearchRegex();
+
+    const matchingOwners =
+        regex
+            ? applicationManagers.filter(
+                owner =>
+                    regex.test(owner)
+            )
+            : applicationManagers;
+
+    renderOwnerOptions(
+        matchingOwners
+    );
 }
 
 /*
@@ -209,6 +298,17 @@ function attachEvents() {
         ?.addEventListener(
             "change",
             applyFilters
+        );
+
+    $("ownerSearchInput")
+        ?.addEventListener(
+            "input",
+            () => {
+
+                updateOwnerOptions();
+
+                applyFilters();
+            }
         );
 
     $("ownerFilter")
@@ -399,6 +499,20 @@ function applyFilters() {
             filters
         );
 
+    const ownerRegex =
+        getOwnerSearchRegex();
+
+    if (ownerRegex) {
+
+        filteredAssessments =
+            filteredAssessments.filter(
+                x =>
+                    ownerRegex.test(
+                        x.appMgrName || ""
+                    )
+            );
+    }
+
     const owner =
         $("ownerFilter")
             ?.value;
@@ -430,7 +544,11 @@ function clearFilters() {
 
     $("assessmentStatusFilter").value = "";
 
+    $("ownerSearchInput").value = "";
+
     $("ownerFilter").value = "";
+
+    updateOwnerOptions();
 
     filteredAssessments =
         [...assessments];
@@ -509,12 +627,7 @@ function renderAssessments() {
                     </div>
 
                     <div class="asset-sub date-info">
-
-                        ${isIncompleteAssessment(assessment)
-                            ? `<strong>Incomplete initiated date:</strong> ${formatDate(assessment.incompleteInitiatedOn || assessment.raw?.incompleteInitiatedOn) || "N/A"}`
-                            : `<strong>Assessed date:</strong> ${formatDate(assessment.attestOn || assessment.raw?.attestOn) || "N/A"} • <strong>Survey completed date:</strong> ${formatDate(assessment.surveyCompletedOn || assessment.raw?.surveyCompletedOn) || "N/A"}`
-                        }
-
+                        ${assessmentDateInfoHtml(assessment)}
                     </div>
 
                     <div class="asset-sub status-detail">
@@ -536,6 +649,34 @@ function renderAssessments() {
     bindCheckboxes();
 
     updateSelectedCount();
+}
+
+function assessmentDateInfoHtml(
+    assessment
+) {
+
+    const dueOn =
+        formatDate(
+            assessment.dueOn ||
+            assessment.raw?.dueOn
+        ) || "N/A";
+
+    if (
+        isIncompleteAssessment(
+            assessment
+        )
+    ) {
+
+        const initiatedOn =
+            formatDate(
+                assessment.incompleteInitiatedOn ||
+                assessment.raw?.incompleteInitiatedOn
+            ) || "N/A";
+
+        return `<strong>Incomplete initiated date:</strong> ${initiatedOn} • <strong>Due on:</strong> ${dueOn}`;
+    }
+
+    return `<strong>Due on:</strong> ${dueOn}`;
 }
 
 function getAssessmentStatus(
@@ -1426,12 +1567,10 @@ function renderReviewResults(
             const dateRows =
                 result.status === "Incomplete"
                     ? `
-                        <div><strong>Survey Completed On:</strong> ${result.surveyCompletedOnFormatted || "N/A"}</div>
-                        <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
                         <div><strong>Incomplete Initiated On:</strong> ${result.incompleteInitiatedOnFormatted || "N/A"}</div>
+                        <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
                     `
                     : `
-                        <div><strong>Survey Completed On:</strong> ${result.surveyCompletedOnFormatted || "N/A"}</div>
                         <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
                     `;
 
@@ -1731,7 +1870,7 @@ function reviewQuestionCardHtml(
             </div>
             <div class="review-output-field">
                 <strong>Options:</strong>
-                <ol>${options}</ol>
+                <ul>${options}</ul>
             </div>
             <div class="review-asa-note ${note ? "" : "hidden"}" data-note-preview="${escapeHtml(key)}">
                 <strong>ASA Notes:</strong>
@@ -2043,7 +2182,9 @@ function reviewOptionText(
     option
 ) {
 
-    return `${option.index || ""}. ${option.internalValue || option.displayValue || "<no options>"}`;
+    return option.internalValue ||
+        option.displayValue ||
+        "<no options>";
 }
 
 function escapeHtml(
