@@ -1246,6 +1246,7 @@ function contactsHtml(contacts) {
                 <tr>
                     <th>Contact Type</th>
                     <th>Name</th>
+                    <th>BEMS ID</th>
                     <th>Email</th>
                 </tr>
             </thead>
@@ -1254,6 +1255,7 @@ function contactsHtml(contacts) {
                     <tr>
                         <td>${escapeHtml(contact.contactType)}</td>
                         <td>${escapeHtml(contact.associatedTo)}</td>
+                        <td>${escapeHtml(contact.bemsId)}</td>
                         <td>${escapeHtml(contact.email)}</td>
                     </tr>
                 `).join("")}
@@ -1299,10 +1301,8 @@ function filterReviewContacts(contacts) {
                     "N/A",
                 associatedTo:
                     user?.name || "N/A",
-                associatedToIdentityId:
-                    user?.bemsId ||
-                    user?.id ||
-                    "N/A",
+                bemsId:
+                    user?.bemsId || "N/A",
                 email:
                     user?.email || "N/A",
                 roleName:
@@ -1407,9 +1407,9 @@ function buildNotesMetaHtml(result) {
     return `
         <div class="review-notes-meta-document">
             ${contactsHtml(result.contacts || [])}
-            <p><strong>${result.status === "Incomplete" ? "Due On" : "Survey Completed On"}:</strong> ${escapeHtml(result.status === "Incomplete" ? result.dueOnFormatted : result.surveyCompletedOnFormatted)}</p>
+            <p><strong>${result.status === "Incomplete" ? "Due On" : "Survey Completed On (Last)"}:</strong> ${escapeHtml(result.status === "Incomplete" ? result.dueOnFormatted : result.surveyCompletedOnFormatted)}</p>
             ${result.status === "Incomplete"
-                ? `<p><strong>Survey Completed On:</strong> ${escapeHtml(result.surveyCompletedOnFormatted || "N/A")}</p>
+                ? `<p><strong>Survey Completed On (Last):</strong> ${escapeHtml(result.surveyCompletedOnFormatted || "N/A")}</p>
                    <p><strong>Incomplete Initiated On:</strong> ${escapeHtml(result.incompleteInitiatedOnFormatted || "N/A")}</p>`
                 : `<p><strong>Due On:</strong> ${escapeHtml(result.dueOnFormatted || "N/A")}</p>`}
         </div>

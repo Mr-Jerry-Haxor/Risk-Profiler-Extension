@@ -191,12 +191,12 @@ function buildDocumentXml(
                 formatDate(review?.dueOn) || "N/A"
             ],
             [
-                "Survey Completed On",
+                "Survey Completed On (Last)",
                 formatDate(review?.surveyCompletedOn) || "N/A"
             ],
             [
                 "Review Assessment Date",
-                formatDateTime(review?.reviewedAt) || "N/A"
+                formatDate(review?.reviewedAt) || "N/A"
             ]
         ]),
         paragraph(
@@ -273,7 +273,7 @@ function contactsTable(
                 fill:
                     "E8EEFC"
             }),
-            tableCell("Identity ID", {
+            tableCell("BEMS ID", {
                 bold:
                     true,
                 fill:
@@ -290,7 +290,7 @@ function contactsTable(
             tableRow([
                 tableCell(contact.contactType || "N/A"),
                 tableCell(contact.associatedTo || "N/A"),
-                tableCell(contact.associatedToIdentityId || "N/A"),
+                tableCell(contact.bemsId || "N/A"),
                 tableCell(contact.email || "N/A")
             ])
         )
