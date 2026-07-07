@@ -331,28 +331,26 @@ function reviewOutputXml(
     }
 
     return workQueue.map((item, index) => [
-        paragraph(
-            [
-                run(item.status || "Review Item", {
-                    bold:
-                        true,
-                    color:
-                        "315FD6"
-                })
-            ],
-            {
-                spacingBefore:
-                    index === 0
-                        ? 80
-                        : 180,
-                spacingAfter:
-                    80,
-                borderBottom:
-                    index > 0
-                        ? false
-                        : false
-            }
-        ),
+        item.status
+            ? paragraph(
+                [
+                    run(item.status, {
+                        bold:
+                            true,
+                        color:
+                            "315FD6"
+                    })
+                ],
+                {
+                    spacingBefore:
+                        index === 0
+                            ? 80
+                            : 180,
+                    spacingAfter:
+                        80
+                }
+            )
+            : "",
         categoryQuestionRow(
             item.questionGroup || "N/A",
             item.questionId || "N/A"

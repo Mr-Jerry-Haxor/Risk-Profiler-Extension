@@ -577,7 +577,7 @@ function statusLabel(
 
     if (labels.length === 0) {
         if (!activeAnswer) {
-            labels.push("No Generated Answer");
+            return "";
         } else if (
             !answerIsValidForQuestion(
                 activeAnswer,
@@ -1324,10 +1324,12 @@ function workQueueHtml(
         if (inlineStyles) {
             return `
                 <div style="margin: 0 0 14px 0; padding: 12px; border: 1px solid #d1d5db; border-left: 4px solid #315fd6; border-radius: 6px; font-family: Arial, sans-serif; font-size: 11pt; color: #1f2937;">
-                    <div style="margin-bottom: 8px;">
-                        ${includeCheckbox ? `${checkboxCopyHtml()} ` : ""}
-                        <span style="display: inline-block; padding: 3px 7px; border-radius: 4px; background: #e8eefc; color: #294fb3; font-size: 9pt; font-weight: bold;">${escapeHtml(block.status)}</span>
-                    </div>
+                    ${block.status
+                        ? `<div style="margin-bottom: 8px;">
+                            ${includeCheckbox ? `${checkboxCopyHtml()} ` : ""}
+                            <span style="display: inline-block; padding: 3px 7px; border-radius: 4px; background: #e8eefc; color: #294fb3; font-size: 9pt; font-weight: bold;">${escapeHtml(block.status)}</span>
+                        </div>`
+                        : ""}
                     <div style="display: flex; justify-content: space-between; gap: 24px; margin-bottom: 8px;">
                         <div style="white-space: nowrap;"><strong>Category:</strong> <span>${escapeHtml(block.questionGroup || "N/A")}</span></div>
                         <div style="white-space: nowrap; text-align: right;"><strong>Question ID:</strong> <span>${escapeHtml(block.questionId || "N/A")}</span></div>
@@ -1346,7 +1348,9 @@ function workQueueHtml(
 
         return `
             <section class="review-output-item">
-                <div class="review-output-status">${escapeHtml(block.status)}</div>
+                ${block.status
+                    ? `<div class="review-output-status">${escapeHtml(block.status)}</div>`
+                    : ""}
                 <div class="review-output-id-row">
                     <div><strong>Category:</strong> <span>${escapeHtml(block.questionGroup || "N/A")}</span></div>
                     <div><strong>Question ID:</strong> <span>${escapeHtml(block.questionId || "N/A")}</span></div>
@@ -1406,7 +1410,9 @@ function buildReviewOutputText(result) {
     const blocks =
         (result.workQueue || [])
             .map(block => [
-                `[ ] (${block.status})`,
+                block.status
+                    ? `[ ] (${block.status})`
+                    : "",
                 `Category : ${block.questionGroup || "N/A"}`,
                 `Question ID : ${block.questionId || "N/A"}`,
                 `Question : ${block.question}`,
@@ -1419,7 +1425,7 @@ function buildReviewOutputText(result) {
                     )
                     : ["1. [ ] <no options>"]),
                 "----------------------------------------"
-            ].join("\n"))
+            ].filter(Boolean).join("\n"))
             .join("\n\n") ||
         "No reachable unanswered work queue items were found.";
 
@@ -1447,7 +1453,9 @@ function buildReviewOutputRtf(result) {
                     : `\\tab 1. ${checkboxField} \\u9744? <no options>\\line `;
 
             return [
-                `${checkboxField} (${escapeRtf(block.status)})\\line `,
+                block.status
+                    ? `${checkboxField} (${escapeRtf(block.status)})\\line `
+                    : "",
                 `\\b Category:\\b0  ${escapeRtf(block.questionGroup || "N/A")}\\tab \\b Question ID:\\b0  ${escapeRtf(block.questionId || "N/A")}\\line `,
                 `\\b Question:\\b0  ${escapeRtf(block.question || "N/A")}\\line `,
                 `\\b Answer Type:\\b0  ${escapeRtf(block.answerType || "N/A")}\\line `,
