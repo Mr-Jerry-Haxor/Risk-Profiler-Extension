@@ -357,6 +357,9 @@ function reviewOutputXml(
         ),
         labelParagraph("Question", item.question || "N/A"),
         labelParagraph("Answer Type", item.answerType || "N/A"),
+        item.asaNotes
+            ? labelParagraph("ASA Notes", item.asaNotes)
+            : "",
         paragraph([
             run("Options", {
                 bold:

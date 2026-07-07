@@ -371,6 +371,13 @@
         </button>
 
         <button
+            id="cancelReviewBtn"
+            class="btn-danger hidden"
+        >
+            Cancel Review
+        </button>
+
+        <button
             id="retryFailedBtn"
             class="btn-secondary hidden"
         >
@@ -497,6 +504,21 @@
             ></div>
             <div class="review-output-title-row">
                 <h3>Review Output</h3>
+                <div class="review-output-actions">
+                    <button
+                        id="selectAllReviewNotesBtn"
+                        class="btn-secondary review-select-all-btn"
+                    >
+                        Select All
+                    </button>
+                    <button
+                        id="downloadReviewNotesBtn"
+                        class="btn-secondary download-review-notes-btn"
+                        disabled
+                    >
+                        Download Review Notes (0/0)
+                    </button>
+                </div>
             </div>
             <div
                 id="reviewNotesContent"
