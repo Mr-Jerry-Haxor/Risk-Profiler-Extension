@@ -358,7 +358,10 @@ function reviewOutputXml(
         labelParagraph("Question", item.question || "N/A"),
         labelParagraph("Answer Type", item.answerType || "N/A"),
         item.asaNotes
-            ? labelParagraph("ASA Notes", item.asaNotes)
+            ? labelParagraph("ASA Notes", item.asaNotes, {
+                fill:
+                    "FFF7CC"
+            })
             : "",
         paragraph([
             run("Options", {
@@ -392,7 +395,7 @@ function optionParagraphs(
             [
                 checkboxControl(),
                 run(
-                    ` ${option.index || ""}. ${option.internalValue || option.displayValue || "<no options>"}`
+                    ` ${option.internalValue || option.displayValue || "<no options>"}`
                 )
             ],
             {
@@ -441,7 +444,8 @@ function categoryQuestionRow(
 
 function labelParagraph(
     label,
-    value
+    value,
+    options = {}
 ) {
 
     return paragraph([
@@ -450,7 +454,7 @@ function labelParagraph(
                 true
         }),
         run(value)
-    ]);
+    ], options);
 }
 
 function checkboxControl() {
@@ -531,6 +535,12 @@ function paragraph(
         options.borderBottom
     ) {
         props.push(`<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="CBD5E1"/></w:pBdr>`);
+    }
+
+    if (
+        options.fill
+    ) {
+        props.push(`<w:shd w:fill="${escapeXml(options.fill)}"/>`);
     }
 
     return `<w:p>${props.length ? `<w:pPr>${props.join("")}</w:pPr>` : ""}${runs.join("")}</w:p>`;

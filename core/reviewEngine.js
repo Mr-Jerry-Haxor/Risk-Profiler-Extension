@@ -125,59 +125,16 @@ function answerType(question) {
 function optionValues(question) {
     return safeArray(question?.options)
         .slice()
-        .sort((a, b) => {
-            const sortA =
-                a?.sortOn ?? 1000000000;
-
-            const sortB =
-                b?.sortOn ?? 1000000000;
-
-            if (sortA !== sortB) {
-                return sortA - sortB;
-            }
-
-            return cleanText(
-                a?.internalValue ??
-                a?.displayValue
-            ).localeCompare(
-                cleanText(
-                    b?.internalValue ??
-                    b?.displayValue
-                )
-            );
-        })
+        .sort(compareOptionOrder)
         .map(option =>
-            cleanText(
-                option?.internalValue ??
-                option?.displayValue
-            )
+            optionIdentityValue(option)
         );
 }
 
 function optionDetails(question) {
     return safeArray(question?.options)
         .slice()
-        .sort((a, b) => {
-            const sortA =
-                a?.sortOn ?? 1000000000;
-
-            const sortB =
-                b?.sortOn ?? 1000000000;
-
-            if (sortA !== sortB) {
-                return sortA - sortB;
-            }
-
-            return cleanText(
-                a?.internalValue ??
-                a?.displayValue
-            ).localeCompare(
-                cleanText(
-                    b?.internalValue ??
-                    b?.displayValue
-                )
-            );
-        })
+        .sort(compareOptionOrder)
         .map((option, index) => ({
             index:
                 index + 1,
@@ -190,15 +147,88 @@ function optionDetails(question) {
         }));
 }
 
+function compareOptionOrder(
+    left,
+    right
+) {
+
+    const sortLeft =
+        left?.sortOn ?? 1000000000;
+
+    const sortRight =
+        right?.sortOn ?? 1000000000;
+
+    if (sortLeft !== sortRight) {
+        return sortLeft - sortRight;
+    }
+
+    return optionIdentityValue(left)
+        .localeCompare(
+            optionIdentityValue(right)
+        );
+}
+
+function optionIdentityCandidates(
+    option
+) {
+
+    return [
+        option?.value,
+        option?.optionValue,
+        option?.internalValue,
+        option?.code,
+        option?.key,
+        option?.name,
+        option?.displayValue
+    ]
+        .map(cleanText)
+        .filter(Boolean);
+}
+
+function optionIdentityValue(
+    option
+) {
+
+    return optionIdentityCandidates(option)[0] || "";
+}
+
+function optionMatchValues(
+    question
+) {
+
+    return safeArray(question?.options)
+        .flatMap(option =>
+            optionIdentityCandidates(option)
+        );
+}
+
 function optionLookup(question) {
     const lookup =
         new Map();
 
-    for (const value of optionValues(question)) {
-        lookup.set(
-            compareText(value),
-            value
-        );
+    for (const option of safeArray(question?.options)) {
+        const aliases =
+            optionIdentityCandidates(option);
+
+        if (aliases.length === 0) {
+            continue;
+        }
+
+        const canonical =
+            aliases[0];
+
+        const values =
+            [
+                canonical,
+                ...aliases
+            ];
+
+        for (const value of values) {
+            lookup.set(
+                compareText(value),
+                values
+            );
+        }
     }
 
     return lookup;
@@ -210,8 +240,8 @@ function rawAnswerValues(answer) {
     }
 
     return safeArray(answer.answerOptions)
-        .map(option =>
-            cleanText(option?.internalValue)
+        .flatMap(option =>
+            optionIdentityCandidates(option)
         )
         .filter(Boolean);
 }
@@ -249,7 +279,7 @@ function canonicalizeAnswerValues(
 
         if (lookup.has(key)) {
             valid.push(
-                lookup.get(key)
+                ...lookup.get(key)
             );
         } else if (
             question?.otherOptionAllowed === "Y" &&
@@ -264,7 +294,8 @@ function canonicalizeAnswerValues(
     }
 
     return {
-        valid,
+        valid:
+            [...new Set(valid)],
         invalid
     };
 }
@@ -757,7 +788,7 @@ function logicPossibleValues(
     const options =
         new Set(
             refQuestion
-                ? optionValues(refQuestion)
+                ? optionMatchValues(refQuestion)
                 : []
         );
 
