@@ -1892,13 +1892,9 @@ function reviewQuestionCardHtml(
         );
 
     const options =
-        (item.options || []).length
-            ? (item.options || [])
-                .map(option =>
-                    `<li>${escapeHtml(reviewOptionText(option))}</li>`
-                )
-                .join("")
-            : "<li>&lt;no options&gt;</li>";
+        reviewOptionListHtml(
+            item
+        );
 
     return `
         <section class="review-output-item" data-question-key="${escapeHtml(key)}">
@@ -2257,6 +2253,47 @@ function reviewOptionText(
     return option.internalValue ||
         option.displayValue ||
         "<no options>";
+}
+
+function reviewOptionListHtml(
+    item
+) {
+
+    const options =
+        (item.options || []).length
+            ? item.options
+            : [
+                {
+                    internalValue:
+                        "<no options>"
+                }
+            ];
+
+    const checkboxType =
+        String(
+            item.answerType || ""
+        ).toLowerCase() === "multi select"
+            ? "checkbox"
+            : "radio";
+
+    const checkboxClass =
+        checkboxType === "checkbox"
+            ? "review-option-checkbox-square"
+            : "review-option-checkbox-circle";
+
+    return options
+        .map(option => `
+            <li class="review-option-row">
+                <input
+                    type="${checkboxType}"
+                    class="review-option-checkbox ${checkboxClass}"
+                    disabled
+                    aria-hidden="true"
+                >
+                <span>${escapeHtml(reviewOptionText(option))}</span>
+            </li>
+        `)
+        .join("");
 }
 
 function escapeHtml(

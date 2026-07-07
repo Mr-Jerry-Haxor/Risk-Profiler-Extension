@@ -1334,6 +1334,56 @@ summary {
     list-style: none;
 }
 
+.review-option-row {
+
+    display: grid;
+
+    grid-template-columns: 16px 1fr;
+
+    gap: 8px;
+
+    align-items: start;
+
+    padding: 8px 0;
+
+    border-bottom: 1px solid var(--border);
+
+    color: var(--text);
+}
+
+.review-option-row:last-child {
+
+    border-bottom: 0;
+}
+
+.review-option-checkbox {
+
+    width: 14px;
+
+    height: 14px;
+
+    margin: 2px 0 0 0;
+
+    accent-color: var(--primary);
+
+    cursor: default;
+}
+
+.review-option-checkbox:disabled {
+
+    opacity: 1;
+}
+
+.review-option-checkbox-circle {
+
+    border-radius: 50%;
+}
+
+.review-option-checkbox-square {
+
+    border-radius: 3px;
+}
+
 .review-notes-content h1 {
 
     max-width: none;
