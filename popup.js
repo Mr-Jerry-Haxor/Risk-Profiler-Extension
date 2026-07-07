@@ -46,6 +46,8 @@ let filteredAssessments = [];
 
 let applicationManagers = [];
 
+let selectedApplicationManager = "";
+
 let selectedAssessmentIds = [];
 
 let validationResults = [];
@@ -132,12 +134,6 @@ async function loadAssessments() {
 
 function populateOwnerFilter() {
 
-    const ownerFilter =
-        $("ownerFilter");
-
-    if (!ownerFilter)
-        return;
-
     applicationManagers =
         [
             ...new Set(
@@ -150,70 +146,92 @@ function populateOwnerFilter() {
         .filter(Boolean)
         .sort();
 
-    renderOwnerOptions(
-        applicationManagers
-    );
+    updateOwnerOptions();
 }
 
 function renderOwnerOptions(
     owners
 ) {
 
-    const ownerFilter =
-        $("ownerFilter");
+    const ownerOptions =
+        $("ownerOptions");
 
-    if (!ownerFilter)
+    if (!ownerOptions)
         return;
 
-    const selectedOwner =
-        ownerFilter.value;
-
-    ownerFilter.innerHTML =
+    ownerOptions.innerHTML =
         "";
 
-    const allOption =
+    const allButton =
         document.createElement(
-            "option"
+            "button"
         );
 
-    allOption.value =
-        "";
+    allButton.type =
+        "button";
 
-    allOption.textContent =
+    allButton.className =
+        "manager-option";
+
+    allButton.textContent =
         "All Application Managers";
 
-    ownerFilter.appendChild(
-        allOption
+    allButton.addEventListener(
+        "click",
+        () => {
+
+            selectedApplicationManager =
+                "";
+
+            $("ownerSearchInput").value =
+                "";
+
+            hideOwnerOptions();
+
+            applyFilters();
+        }
+    );
+
+    ownerOptions.appendChild(
+        allButton
     );
 
     owners.forEach(owner => {
 
         const option =
             document.createElement(
-                "option"
+                "button"
             );
 
-        option.value =
-            owner;
+        option.type =
+            "button";
+
+        option.className =
+            "manager-option";
 
         option.textContent =
             owner;
 
-        ownerFilter.appendChild(
+        option.addEventListener(
+            "click",
+            () => {
+
+                selectedApplicationManager =
+                    owner;
+
+                $("ownerSearchInput").value =
+                    owner;
+
+                hideOwnerOptions();
+
+                applyFilters();
+            }
+        );
+
+        ownerOptions.appendChild(
             option
         );
     });
-
-    if (
-        selectedOwner &&
-        owners.includes(
-            selectedOwner
-        )
-    ) {
-
-        ownerFilter.value =
-            selectedOwner;
-    }
 }
 
 function getOwnerSearchRegex() {
@@ -254,6 +272,22 @@ function updateOwnerOptions() {
     renderOwnerOptions(
         matchingOwners
     );
+}
+
+function showOwnerOptions() {
+
+    updateOwnerOptions();
+
+    $("ownerOptions")
+        ?.classList
+        .remove("hidden");
+}
+
+function hideOwnerOptions() {
+
+    $("ownerOptions")
+        ?.classList
+        .add("hidden");
 }
 
 /*
@@ -302,20 +336,53 @@ function attachEvents() {
 
     $("ownerSearchInput")
         ?.addEventListener(
+            "focus",
+            showOwnerOptions
+        );
+
+    $("ownerSearchInput")
+        ?.addEventListener(
             "input",
             () => {
 
+                selectedApplicationManager =
+                    "";
+
                 updateOwnerOptions();
+
+                showOwnerOptions();
 
                 applyFilters();
             }
         );
 
-    $("ownerFilter")
+    $("ownerSearchInput")
         ?.addEventListener(
-            "change",
-            applyFilters
+            "keydown",
+            event => {
+
+                if (event.key === "Escape") {
+
+                    hideOwnerOptions();
+                }
+            }
         );
+
+    document.addEventListener(
+        "click",
+        event => {
+
+            const managerSearch =
+                event.target.closest(
+                    ".manager-search-select"
+                );
+
+            if (!managerSearch) {
+
+                hideOwnerOptions();
+            }
+        }
+    );
 
     $("clearFiltersBtn")
         ?.addEventListener(
@@ -499,31 +566,29 @@ function applyFilters() {
             filters
         );
 
-    const ownerRegex =
-        getOwnerSearchRegex();
-
-    if (ownerRegex) {
+    if (selectedApplicationManager) {
 
         filteredAssessments =
             filteredAssessments.filter(
                 x =>
-                    ownerRegex.test(
-                        x.appMgrName || ""
-                    )
+                    x.appMgrName ===
+                    selectedApplicationManager
             );
-    }
+    } else {
 
-    const owner =
-        $("ownerFilter")
-            ?.value;
+        const ownerRegex =
+            getOwnerSearchRegex();
 
-    if (owner) {
+        if (ownerRegex) {
 
-        filteredAssessments =
-            filteredAssessments.filter(
-                x =>
-                    x.appMgrName === owner
-            );
+            filteredAssessments =
+                filteredAssessments.filter(
+                    x =>
+                        ownerRegex.test(
+                            x.appMgrName || ""
+                        )
+                );
+        }
     }
 
     renderAssessments();
@@ -546,7 +611,8 @@ function clearFilters() {
 
     $("ownerSearchInput").value = "";
 
-    $("ownerFilter").value = "";
+    selectedApplicationManager =
+        "";
 
     updateOwnerOptions();
 
@@ -676,7 +742,13 @@ function assessmentDateInfoHtml(
         return `<strong>Incomplete initiated date:</strong> ${initiatedOn} • <strong>Due on:</strong> ${dueOn}`;
     }
 
-    return `<strong>Due on:</strong> ${dueOn}`;
+    const surveyCompletedOn =
+        formatDate(
+            assessment.surveyCompletedOn ||
+            assessment.raw?.surveyCompletedOn
+        ) || "N/A";
+
+    return `<strong>Due on:</strong> ${dueOn} • <strong>Survey Completed(Last):</strong> ${surveyCompletedOn}`;
 }
 
 function getAssessmentStatus(

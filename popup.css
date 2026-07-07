@@ -508,9 +508,73 @@ h1 {
 
 .manager-search-select {
 
-    display: grid;
+    position: relative;
+}
 
-    gap: 6px;
+.manager-search-select .input {
+
+    margin-bottom: 10px;
+}
+
+.manager-option-list {
+
+    position: absolute;
+
+    left: 0;
+
+    right: 0;
+
+    top: calc(100% - 6px);
+
+    z-index: 6;
+
+    max-height: 210px;
+
+    overflow-y: auto;
+
+    border: 1px solid var(--border);
+
+    border-radius: 8px;
+
+    background: white;
+
+    box-shadow: 0 10px 24px rgba(31, 41, 55, .14);
+}
+
+.manager-option {
+
+    width: 100%;
+
+    padding: 9px 10px;
+
+    border: 0;
+
+    border-bottom: 1px solid var(--border);
+
+    background: white;
+
+    color: var(--text);
+
+    cursor: pointer;
+
+    font-size: 12px;
+
+    line-height: 1.35;
+
+    text-align: left;
+}
+
+.manager-option:last-child {
+
+    border-bottom: 0;
+}
+
+.manager-option:hover,
+.manager-option:focus {
+
+    background: var(--bg);
+
+    outline: none;
 }
 
 .asset-name {
