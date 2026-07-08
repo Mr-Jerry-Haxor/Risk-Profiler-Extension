@@ -1,5 +1,7 @@
 import {
     fail,
+    getValues,
+    hasRiskProfilerApprovals,
     includesValue,
     isYes,
     notApplicable,
@@ -43,7 +45,7 @@ const RP11 = {
             )
         ) {
 
-            return fail(
+            return pass(
                 this.id,
                 "CSIR-SCR-NonpersonAcct-Disable is No."
             );
@@ -60,6 +62,31 @@ const RP11 = {
             return pass(
                 this.id,
                 "CSIR-SCR-NonpersonAcct-Disable is Yes."
+            );
+        }
+
+        if (
+            getValues(
+                context,
+                "CSIR-SCR-NonpersonAcct-Disable"
+            ).length > 0
+        ) {
+
+            return fail(
+                this.id,
+                "CSIR-SCR-NonpersonAcct-Disable has a selected value other than Yes or No."
+            );
+        }
+
+        if (
+            hasRiskProfilerApprovals(
+                context
+            )
+        ) {
+
+            return notApplicable(
+                this.id,
+                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Disable is not answered."
             );
         }
 

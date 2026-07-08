@@ -1,5 +1,6 @@
 import {
     fail,
+    hasRiskProfilerApprovals,
     includesValue,
     isYes,
     notApplicable,
@@ -56,6 +57,18 @@ const RP12 = {
             return pass(
                 this.id,
                 "CSIR-SCR-NonpersonAcct-Restricted is Yes."
+            );
+        }
+
+        if (
+            hasRiskProfilerApprovals(
+                context
+            )
+        ) {
+
+            return notApplicable(
+                this.id,
+                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Restricted is not answered."
             );
         }
 

@@ -1,4 +1,5 @@
 import {
+    extractHttpUrls,
     fail,
     findValuesByKeyFragment,
     getAnswer,
@@ -60,12 +61,12 @@ const RP3 = {
                     );
 
                 apiUrls =
-                    (summary?.collectedDataItems || [])
-                        .map(
-                            item =>
-                                item?.dataCollector?.collectorValue
-                        )
-                        .filter(Boolean);
+                    extractHttpUrls(
+                        [
+                            summary?.collectedDataItems,
+                            summary?.lastAssessmentCollectedDataItems
+                        ]
+                    );
             }
 
         } catch (error) {

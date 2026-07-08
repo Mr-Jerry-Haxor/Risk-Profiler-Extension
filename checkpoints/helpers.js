@@ -368,6 +368,50 @@ export function findValuesByKeyFragment(
     return matches;
 }
 
+export function extractHttpUrls(
+    node
+) {
+
+    const urls = [];
+    const urlPattern =
+        /https?:\/\/[^\s"'<>]+/gi;
+
+    walkNode(
+        node,
+        value => {
+
+            if (
+                typeof value !== "string"
+            ) {
+                return;
+            }
+
+            const matches =
+                value.match(
+                    urlPattern
+                );
+
+            if (
+                matches
+            ) {
+
+                urls.push(
+                    ...matches.map(
+                        url =>
+                            url.trim()
+                    )
+                );
+            }
+        }
+    );
+
+    return [
+        ...new Set(
+            urls
+        )
+    ];
+}
+
 export function findAssessmentById(
     node,
     assessmentId
@@ -440,6 +484,57 @@ export function collectValuesByKey(
     );
 
     return values;
+}
+
+export function hasRiskProfilerApprovals(
+    context
+) {
+
+    const assessmentId =
+        context?.application?.assessmentId ||
+        context?.assessment?.assessmentId;
+
+    if (
+        !assessmentId
+    ) {
+        return false;
+    }
+
+    const matchedAssessment =
+        findAssessmentById(
+            context?.reviewSummary,
+            assessmentId
+        );
+
+    if (
+        !matchedAssessment
+    ) {
+        return false;
+    }
+
+    const votes =
+        collectValuesByKey(
+            matchedAssessment,
+            "voteCode"
+        ).filter(Boolean);
+
+    if (
+        votes.length < 2
+    ) {
+        return false;
+    }
+
+    return votes
+        .slice(
+            0,
+            2
+        )
+        .every(
+            vote =>
+                String(
+                    vote
+                ).trim() === "A"
+        );
 }
 
 export function deploymentPhase(
