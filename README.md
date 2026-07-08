@@ -2,9 +2,9 @@
 
 ## Overview
 
-Risk Profiler Review and Validate Automation is a Chrome Manifest V3 extension for Risk Profiler assessment review, validation, reporting, and documentation. It helps users load Risk Profiler application assessments from Cairo, filter and select assessments, validate selected assessments against a defined checkpoint list, review assessment migration/readiness items, export validation results to Excel, and download formatted Word review notes with selected questions, ASA Notes, contact details, and clickable checkbox controls.
+Risk Profiler Review and Validate Automation is a Microsoft Edge Manifest V3 extension for Risk Profiler assessment review, validation, reporting, and documentation. It helps users load Risk Profiler application assessments from Cairo, filter and select assessments, validate selected assessments against a defined checkpoint list, review assessment migration/readiness items, export validation results to Excel, and download formatted Word review notes with selected questions, ASA Notes, contact details, and clickable checkbox controls.
 
-The extension is designed for business users who need consistent review output and for technical teams who need traceable, repeatable, browser-based automation across Cairo, ESATS, and GTC data sources.
+The extension is designed for business users who need consistent review output and for technical teams who need traceable, repeatable, Edge-based automation across Cairo, ESATS, and GTC data sources.
 
 ## Business Purpose
 
@@ -27,12 +27,12 @@ The extension uses the following stack:
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Browser extension platform | Chrome Extension Manifest V3 | Runs the popup UI and service worker automation inside Chrome. |
+| Edge extension platform | Microsoft Edge Manifest V3 | Runs the popup UI and service worker automation inside Microsoft Edge. |
 | UI | HTML, CSS, vanilla JavaScript ES modules | Popup interface, assessment filters, tabs, progress, results, modals, review notes. |
 | Background execution | MV3 service worker | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh. |
 | Bundling | esbuild | Bundles `popup.js` and `service_worker.js` into `dist/`. |
-| Storage | `chrome.storage.local` with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
-| API access | `fetch()` with browser cookies and trusted-tab script execution | Calls Cairo directly and calls ESATS/GTC through signed-in trusted tabs where needed. |
+| Storage | Edge extension local storage with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
+| API access | `fetch()` with Edge session cookies and trusted-tab script execution | Calls Cairo directly and calls ESATS/GTC through signed-in trusted Edge tabs where needed. |
 | Validation engine | Local JavaScript checkpoint modules `RP1` through `RP13` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
 | Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
 | Excel export | Bundled `ExcelJS` plus encoded workbook template | Creates validation workbook with summary and assessment-level sheets. |
@@ -45,7 +45,7 @@ Primary source folders:
 - `core/`: validation, review, assessment filtering, survey diff, DOCX generation.
 - `checkpoints/`: Risk Profiler validation rules.
 - `export/`: Excel export logic.
-- `storage/`: Chrome local storage helpers.
+- `storage/`: Edge extension local storage helpers.
 - `utils/`: constants and shared helpers.
 - `popup.html`, `popup.css`, `popup.js`: extension UI.
 - `service_worker.js`: background job orchestration.
@@ -58,7 +58,7 @@ Manifest permissions:
 | Permission | Why it is used |
 |---|---|
 | `storage` | Stores assessment lists, validation results, review results, failed assessment retry data, contexts, progress, and UI state. |
-| `unlimitedStorage` | Prevents Chrome storage quota pressure when many assessments, contexts, and result sets are retained locally. |
+| `unlimitedStorage` | Prevents Edge extension storage quota pressure when many assessments, contexts, and result sets are retained locally. |
 | `alarms` | Schedules periodic assessment refresh every 30 minutes. |
 | `tabs` | Finds/open trusted Cairo, ESATS, and GTC tabs and opens prerequisite links. |
 | `scripting` | Executes fetch logic inside signed-in ESATS/GTC pages when direct extension-origin fetch is not sufficient. |
@@ -81,7 +81,7 @@ What the extension does:
 4. Lets the user select assessments.
 5. Runs validation mode against selected assessments using 13 checkpoint rules.
 6. Runs review mode against selected assessments using old/new survey questions and answers. For incomplete assessments, reviewers can optionally run based on selected `newAnswers`.
-7. Persists validation and review results separately in local browser storage.
+7. Persists validation and review results separately in local Edge extension storage.
 8. Shows validation and review results in separate tabs.
 9. Exports validation results to Excel.
 10. Lets users choose review-note questions, enter ASA Notes, and download Word `.docx` review notes with clickable checkbox content controls.
@@ -112,7 +112,7 @@ All automation calls are read-only `GET` requests. The extension does not create
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}` | `GET` | Validation mode | Loads version policy/artifact data for each ESATS version. |
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}` | `GET` | Review mode | Loads ESATS contact details used in review output and Word review notes. |
 
-ESATS gateway requests are executed from a trusted signed-in ESATS tab using `chrome.scripting.executeScript`. The extension reads the ESATS token from the ESATS page context and sends it as a bearer token when available.
+ESATS gateway requests are executed from a trusted signed-in ESATS tab using the Edge extension scripting API. The extension reads the ESATS token from the ESATS page context and sends it as a bearer token when available.
 
 #### GTC Endpoints
 
@@ -134,7 +134,7 @@ GTC requests are also routed through a trusted signed-in GTC tab when required.
 
 ### Runtime Model
 
-The extension uses browser-side concurrency:
+The extension uses Edge-side concurrency:
 
 - Validation concurrency: up to 5 assessments at a time.
 - Review concurrency: up to 3 assessments at a time.
@@ -287,8 +287,8 @@ Because review runs 3 assessments concurrently, 10 assessments are processed in 
    - `dueOn`
    - owner/manager fields
    - incomplete initiation fields
-3. Records are stored in `chrome.storage.local`.
-4. The refresh also runs automatically on extension install, browser startup, and every 30 minutes by Chrome alarm.
+3. Records are stored in Edge extension local storage.
+4. The refresh also runs automatically on extension install, Edge startup, and every 30 minutes by extension alarm.
 
 #### Validation Flow
 
@@ -351,7 +351,7 @@ Review modes:
 
 #### Word Review Notes Generation
 
-The extension generates `.docx` files directly in the browser using OpenXML:
+The extension generates `.docx` files directly in Edge using OpenXML:
 
 - Creates `[Content_Types].xml`
 - Creates package relationships
@@ -359,7 +359,7 @@ The extension generates `.docx` files directly in the browser using OpenXML:
 - Creates `word/styles.xml`
 - Creates `word/settings.xml`
 - Packages the files into a ZIP-compatible DOCX structure
-- Downloads the file through a browser Blob
+- Downloads the file through an Edge Blob download
 
 The Word output includes selected review questions, application metadata, ESATS contact details, `BEMS ID` where available, highlighted ASA Notes, and clickable checkbox content controls using WordprocessingML checkbox controls. The DOCX intentionally excludes UI-only Review Basis and reachability tooltip details. The downloaded file name is:
 
@@ -379,7 +379,7 @@ This extension consolidates those tasks into one guided workflow.
 
 #### Business Workflow
 
-1. Open Chrome and sign in to Cairo, ESATS, and GTC.
+1. Open Microsoft Edge and sign in to Cairo, ESATS, and GTC.
 2. Open the extension.
 3. Confirm prerequisite sessions are active.
 4. Search/filter the assessment list.
@@ -425,8 +425,8 @@ The extension improves:
 
 - The extension does not submit or modify assessments.
 - It reads existing assessment, template, contact, ESATS, and GTC data.
-- It stores results locally in Chrome.
-- It stores selected review mode and ASA Notes locally in Chrome.
+- It stores results locally in Microsoft Edge extension storage.
+- It stores selected review mode and ASA Notes locally in Microsoft Edge extension storage.
 - It creates review and validation artifacts that can be shared with stakeholders.
 - Review Basis and reachability notes help users understand review output in the UI, but are not written into downloaded Word review notes.
 - Final business decisions still belong to the reviewer or assessment owner.
@@ -435,13 +435,13 @@ The extension improves:
 
 #### Architecture
 
-The application follows a modular browser-extension architecture:
+The application follows a modular Microsoft Edge extension architecture:
 
 - Popup UI handles user interaction.
 - Service worker handles long-running automation tasks.
 - API modules centralize endpoint access.
 - Core modules implement validation, review, filtering, and document generation.
-- Storage helpers isolate Chrome local storage.
+- Storage helpers isolate Edge extension local storage.
 - Build script bundles deployable assets into `dist/`.
 
 #### Data Flow
@@ -449,11 +449,11 @@ The application follows a modular browser-extension architecture:
 ```text
 User action
   -> popup.js
-  -> chrome.runtime message
+  -> Edge runtime message
   -> service_worker.js
   -> API modules
   -> core validation/review logic
-  -> chrome.storage.local
+  -> Edge extension local storage
   -> popup render
   -> Excel/DOCX export if requested
 ```
@@ -506,12 +506,12 @@ Popup runtime state also keeps the active review-note question selections so the
 
 #### Security Notes
 
-- The extension relies on existing authenticated browser sessions.
+- The extension relies on existing authenticated Microsoft Edge sessions.
 - Cairo calls use cookies with `credentials: include`.
-- ESATS and GTC calls may run inside trusted signed-in tabs through `chrome.scripting`.
+- ESATS and GTC calls may run inside trusted signed-in tabs through the Edge extension scripting API.
 - The extension does not ask users for passwords.
 - The extension does not write back to Cairo, ESATS, or GTC.
-- Output artifacts are generated locally in the browser.
+- Output artifacts are generated locally in Microsoft Edge.
 
 ## 4. Enterprise Production Readiness
 
@@ -519,7 +519,7 @@ To scale this extension for enterprise-level production use, the following contr
 
 ### Deployment and Governance
 
-- Publish through an enterprise Chrome Web Store or managed extension deployment.
+- Publish through Microsoft Edge Add-ons or managed enterprise Edge extension deployment.
 - Lock extension ID and versioning.
 - Use controlled release channels: development, pilot, production.
 - Require formal change approvals for endpoint, permission, and validation-rule changes.
@@ -532,7 +532,7 @@ To scale this extension for enterprise-level production use, the following contr
 - Add content security policy review during release.
 - Avoid broad `<all_urls>` web-accessible resources unless explicitly justified.
 - Consider moving any sensitive endpoint configuration into a centrally managed configuration file.
-- Perform a security review of `chrome.scripting` usage because it executes code in trusted pages.
+- Perform a security review of Edge extension scripting usage because it executes code in trusted pages.
 - Add static analysis and dependency scanning to the build pipeline.
 
 ### Performance and Scale
@@ -580,7 +580,7 @@ To scale this extension for enterprise-level production use, the following contr
   - checkpoint scoring.
 - Add mocked API integration tests for validation and review workflows.
 - Add regression fixtures for survey template changes and answer carry-forward cases.
-- Add a build validation step that loads the extension package in a headless browser.
+- Add a build validation step that loads the extension package in Microsoft Edge automation.
 
 ### Maintainability
 
@@ -626,9 +626,9 @@ Build the extension:
 npm run build
 ```
 
-Load in Chrome:
+Load in Microsoft Edge:
 
-1. Open `chrome://extensions`.
+1. Open `edge://extensions`.
 2. Enable Developer mode.
 3. Click `Load unpacked`.
 4. Select the `dist/` folder.
@@ -638,7 +638,7 @@ Load in Chrome:
 
 ```text
 Extension version: 1.0.0
-Manifest: Chrome Extension Manifest V3
+Manifest: Microsoft Edge Manifest V3
 Primary modes: Validation Mode, Initial Review Mode, and Review Based on Selected Answers
 ```
 

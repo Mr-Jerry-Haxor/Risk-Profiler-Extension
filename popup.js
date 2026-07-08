@@ -437,6 +437,36 @@ function attachEvents() {
             openReviewSettingsModal
         );
 
+    $("scrollToggleBtn")
+        ?.addEventListener(
+            "click",
+            handleScrollToggle
+        );
+
+    window.addEventListener(
+        "scroll",
+        updateScrollToggleButton,
+        {
+            passive:
+                true
+        }
+    );
+
+    window.addEventListener(
+        "resize",
+        updateScrollToggleButton
+    );
+
+    if (
+        typeof ResizeObserver !== "undefined"
+    ) {
+        new ResizeObserver(
+            updateScrollToggleButton
+        ).observe(
+            document.body
+        );
+    }
+
     $("closeReviewSettingsModalBtn")
         ?.addEventListener(
             "click",
@@ -560,6 +590,109 @@ function attachEvents() {
         );
 
     attachPrerequisiteOpenLinks();
+
+    updateScrollToggleButton();
+}
+
+function getScrollMetrics() {
+
+    const scrollTop =
+        window.scrollY ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+
+    const scrollHeight =
+        Math.max(
+            document.documentElement.scrollHeight,
+            document.body.scrollHeight
+        );
+
+    const clientHeight =
+        window.innerHeight ||
+        document.documentElement.clientHeight;
+
+    const maxScroll =
+        Math.max(
+            0,
+            scrollHeight - clientHeight
+        );
+
+    return {
+        scrollTop,
+        maxScroll
+    };
+}
+
+function shouldScrollToTop() {
+
+    const {
+        scrollTop,
+        maxScroll
+    } =
+        getScrollMetrics();
+
+    if (
+        maxScroll <= 0
+    ) {
+        return false;
+    }
+
+    return scrollTop >=
+        maxScroll / 2;
+}
+
+function updateScrollToggleButton() {
+
+    const button =
+        $("scrollToggleBtn");
+
+    if (!button) {
+        return;
+    }
+
+    const {
+        maxScroll
+    } =
+        getScrollMetrics();
+
+    const scrollUp =
+        shouldScrollToTop();
+
+    button.classList.toggle(
+        "scroll-up",
+        scrollUp
+    );
+
+    button.title =
+        scrollUp
+            ? "Scroll to top"
+            : "Scroll to bottom";
+
+    button.setAttribute(
+        "aria-label",
+        button.title
+    );
+
+    button.disabled =
+        maxScroll <= 0;
+}
+
+function handleScrollToggle() {
+
+    const {
+        maxScroll
+    } =
+        getScrollMetrics();
+
+    window.scrollTo({
+        top:
+            shouldScrollToTop()
+                ? 0
+                : maxScroll,
+        behavior:
+            "smooth"
+    });
 }
 
 /*

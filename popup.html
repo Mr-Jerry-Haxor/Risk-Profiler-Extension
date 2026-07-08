@@ -68,7 +68,7 @@
                         </strong>
 
                         <p>
-                            Open and sign in to Cairo, ESATS, and GTC in separate browser tabs first. Boeing WSSO stores the session cookies the extension needs for API requests.
+                            Open and sign in to Cairo, ESATS, and GTC in separate Edge tabs first. Boeing WSSO stores the session cookies the extension needs for API requests.
                         </p>
 
                         <ol>
@@ -374,7 +374,18 @@
                     title="Review settings"
                     aria-label="Review settings"
                 >
-                    ⚙
+                    <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <path d="M4 7h10"></path>
+                        <path d="M18 7h2"></path>
+                        <path d="M16 5v4"></path>
+                        <path d="M4 17h2"></path>
+                        <path d="M10 17h10"></path>
+                        <path d="M8 15v4"></path>
+                    </svg>
                 </button>
 
             </div>
@@ -671,6 +682,24 @@
     </div>
 
 </div>
+
+<button
+    id="scrollToggleBtn"
+    class="scroll-toggle-btn"
+    type="button"
+    title="Scroll to bottom"
+    aria-label="Scroll to bottom"
+>
+    <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <path d="M12 5v14"></path>
+        <path d="m6 13 6 6 6-6"></path>
+    </svg>
+</button>
+
 <script src="lib/exceljs.min.js"></script>
 <script type="module"
         src="popup.js">
