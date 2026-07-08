@@ -1,5 +1,7 @@
 import {
-    CONFIG
+    CONFIG,
+    REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS,
+    REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD
 } from "../utils/constants.js";
 
 import {
@@ -18,6 +20,11 @@ const REVIEW_CONTACT_ROLES =
         "ApplicationManager",
         "BusinessSystemManager"
     ]);
+
+const REVIEW_SEMANTIC_OPTION_MATCH_IDS =
+    new Set(
+        REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS
+    );
 
 function cleanText(value) {
     if (value === null || value === undefined) {
@@ -202,6 +209,163 @@ function optionMatchValues(
         );
 }
 
+function semanticOptionMatchEnabled(
+    question
+) {
+
+    return REVIEW_SEMANTIC_OPTION_MATCH_IDS.has(
+        cleanText(
+            question?.alternateQuestionId
+        )
+    );
+}
+
+function semanticOptionTokens(
+    value
+) {
+
+    const normalized =
+        compareText(value)
+            .replace(/[/-]/g, " ")
+            .replace(/\bsoftware as a service\b/g, "saas")
+            .replace(/\bplatform as a service\b/g, "paas")
+            .replace(/\binfrastructure as a service\b/g, "iaas")
+            .replace(/\bthird party\b/g, "vendor");
+
+    const stopWords =
+        new Set([
+            "a",
+            "an",
+            "and",
+            "as",
+            "for",
+            "of",
+            "or",
+            "the",
+            "to"
+        ]);
+
+    const lowSignalQualifiers =
+        new Set([
+            "vendor",
+            "vendors",
+            "provider",
+            "providers"
+        ]);
+
+    return new Set(
+        normalized
+            .split(/\s+/)
+            .map(token =>
+                token.trim()
+            )
+            .filter(token =>
+                token &&
+                !stopWords.has(token) &&
+                !lowSignalQualifiers.has(token)
+            )
+    );
+}
+
+function semanticTokenScore(
+    left,
+    right
+) {
+
+    if (
+        left.size === 0 ||
+        right.size === 0
+    ) {
+        return 0;
+    }
+
+    const intersection =
+        [...left].filter(token =>
+            right.has(token)
+        ).length;
+
+    const union =
+        new Set([
+            ...left,
+            ...right
+        ]).size;
+
+    const jaccard =
+        intersection / union;
+
+    const containment =
+        intersection / Math.min(
+            left.size,
+            right.size
+        );
+
+    return Math.max(
+        jaccard,
+        containment
+    );
+}
+
+function semanticOptionMatch(
+    value,
+    question
+) {
+
+    if (
+        !semanticOptionMatchEnabled(question)
+    ) {
+        return null;
+    }
+
+    const valueTokens =
+        semanticOptionTokens(value);
+
+    const matches =
+        safeArray(question?.options)
+            .map(option => {
+                const aliases =
+                    optionIdentityCandidates(option);
+
+                const bestScore =
+                    aliases.reduce(
+                        (best, alias) =>
+                            Math.max(
+                                best,
+                                semanticTokenScore(
+                                    valueTokens,
+                                    semanticOptionTokens(alias)
+                                )
+                            ),
+                        0
+                    );
+
+                return {
+                    aliases,
+                    score:
+                        bestScore
+                };
+            })
+            .filter(match =>
+                match.aliases.length > 0 &&
+                match.score >=
+                REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD
+            )
+            .sort((a, b) =>
+                b.score - a.score
+            );
+
+    if (
+        matches.length !== 1 ||
+        matches[0].score <
+        REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD
+    ) {
+        return null;
+    }
+
+    return [
+        ...new Set(matches[0].aliases)
+    ];
+}
+
 function optionLookup(question) {
     const lookup =
         new Map();
@@ -281,15 +445,30 @@ function canonicalizeAnswerValues(
             valid.push(
                 ...lookup.get(key)
             );
-        } else if (
-            question?.otherOptionAllowed === "Y" &&
-            ["other", "others"].includes(key)
-        ) {
-            valid.push(
-                "Other"
-            );
         } else {
-            invalid.push(value);
+            const semanticMatch =
+                semanticOptionMatch(
+                    value,
+                    question
+                );
+
+            if (semanticMatch) {
+                valid.push(
+                    ...semanticMatch
+                );
+                continue;
+            }
+
+            if (
+                question?.otherOptionAllowed === "Y" &&
+                ["other", "others"].includes(key)
+            ) {
+                valid.push(
+                    "Other"
+                );
+            } else {
+                invalid.push(value);
+            }
         }
     }
 

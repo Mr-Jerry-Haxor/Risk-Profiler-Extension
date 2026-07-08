@@ -28,6 +28,12 @@ export const CONFIG = {
     }
 };
 
+export const REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS = [
+    "CSIR-AppType"
+];
+
+export const REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD = 0.8;
+
 export const URLS = {
 
     PRIMARY_ASSESSMENTS:
