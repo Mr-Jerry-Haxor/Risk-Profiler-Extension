@@ -1,8 +1,8 @@
-# Rest Profiler Review and Validate Automation
+# Risk Profiler Review and Validate Automation
 
 ## Overview
 
-Rest Profiler Review and Validate Automation is a Chrome Manifest V3 extension for Risk Profiler assessment review, validation, reporting, and documentation. It helps users load Risk Profiler application assessments from Cairo, filter and select assessments, validate selected assessments against a defined checkpoint list, review assessment migration/readiness items, export validation results to Excel, and download formatted Word review notes with clickable checkbox controls.
+Risk Profiler Review and Validate Automation is a Chrome Manifest V3 extension for Risk Profiler assessment review, validation, reporting, and documentation. It helps users load Risk Profiler application assessments from Cairo, filter and select assessments, validate selected assessments against a defined checkpoint list, review assessment migration/readiness items, export validation results to Excel, and download formatted Word review notes with selected questions, ASA Notes, contact details, and clickable checkbox controls.
 
 The extension is designed for business users who need consistent review output and for technical teams who need traceable, repeatable, browser-based automation across Cairo, ESATS, and GTC data sources.
 
@@ -16,7 +16,7 @@ Business value:
 - Reduces manual lookup across Cairo, ESATS, and GTC.
 - Improves repeatability for quality checks and audit support.
 - Creates downloadable Excel validation reports.
-- Creates Word review notes with application metadata, contacts, dates, review output, and clickable checkbox controls.
+- Creates Word review notes with application metadata, contacts, dates, selected review output, ASA Notes, and clickable checkbox controls.
 - Helps reviewers focus on risk and remediation decisions instead of API navigation and data assembly.
 
 ## 1. Technical Stack
@@ -31,10 +31,10 @@ The extension uses the following stack:
 | UI | HTML, CSS, vanilla JavaScript ES modules | Popup interface, assessment filters, tabs, progress, results, modals, review notes. |
 | Background execution | MV3 service worker | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh. |
 | Bundling | esbuild | Bundles `popup.js` and `service_worker.js` into `dist/`. |
-| Storage | `chrome.storage.local` with `unlimitedStorage` | Stores assessments, validation results, review results, progress, contexts, and UI state. |
+| Storage | `chrome.storage.local` with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
 | API access | `fetch()` with browser cookies and trusted-tab script execution | Calls Cairo directly and calls ESATS/GTC through signed-in trusted tabs where needed. |
-| Validation engine | Local JavaScript checkpoint modules `RP1` through `RP13` | Runs deterministic validation rules against assembled context. |
-| Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, computes reachable unanswered review items. |
+| Validation engine | Local JavaScript checkpoint modules `RP1` through `RP13` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
+| Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
 | Excel export | Bundled `ExcelJS` plus encoded workbook template | Creates validation workbook with summary and assessment-level sheets. |
 | Word export | Custom OpenXML `.docx` generator | Creates Word review notes with formatted tables, sections, and clickable checkbox content controls. |
 | Build output | `dist/` folder | Loadable production extension package. |
@@ -80,11 +80,11 @@ What the extension does:
 3. Lets the user search/filter assessments by text, regex, status, owner, due date, or survey completed date.
 4. Lets the user select assessments.
 5. Runs validation mode against selected assessments using 13 checkpoint rules.
-6. Runs review mode against selected assessments using old/new survey questions and answers.
+6. Runs review mode against selected assessments using old/new survey questions and answers. For incomplete assessments, reviewers can optionally run based on selected `newAnswers`.
 7. Persists validation and review results separately in local browser storage.
 8. Shows validation and review results in separate tabs.
 9. Exports validation results to Excel.
-10. Downloads review notes to Word `.docx` with clickable checkbox content controls.
+10. Lets users choose review-note questions, enter ASA Notes, and download Word `.docx` review notes with clickable checkbox content controls.
 
 ### 1(c). Endpoints and HTTP Requests
 
@@ -97,7 +97,7 @@ All automation calls are read-only `GET` requests. The extension does not create
 | `https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35` | `GET` | Assessment refresh, Cairo prerequisite check | Loads primary Risk Profiler assessment inventory. |
 | `https://cairois.web.boeing.com/api/assessment/{id}/detail` | `GET` | Validation, review | Loads assessment detail, including survey template ID. |
 | `https://cairois.web.boeing.com/api/assessment/survey/{id}/answers` | `GET` | Validation, review | Loads assessment survey answers. |
-| `https://cairois.web.boeing.com/api/assessment/{id}/contacts` | `GET` | Review mode | Loads contacts; output keeps Responsible Manager and Primary Contact. |
+| `https://cairois.web.boeing.com/api/assessment/{id}/contacts` | `GET` | Legacy/available Cairo contact lookup | Loads assessment contacts if this wrapper is used by future review or validation logic. Current review notes use the ESATS contact-details summary endpoint. |
 | `https://cairois.web.boeing.com/api/survey/template/{id}/questions` | `GET` | Validation, review, survey diff | Loads questions for a survey template. |
 | `https://cairois.web.boeing.com/api/surveyTemplate/{id}` | `GET` | Review mode, survey diff | Loads survey-template metadata. |
 | `https://cairois.web.boeing.com/api/surveyTemplate?where=alternateSurveyTemplateId:=:rp-app` | `GET` | Review mode, What's New modal | Loads all Risk Profiler app survey template versions. |
@@ -110,6 +110,7 @@ All automation calls are read-only `GET` requests. The extension does not create
 |---|---:|---|---|
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId={assetId}` | `GET` | Validation mode | Loads ESATS application versions. |
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}` | `GET` | Validation mode | Loads version policy/artifact data for each ESATS version. |
+| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}` | `GET` | Review mode | Loads ESATS contact details used in review output and Word review notes. |
 
 ESATS gateway requests are executed from a trusted signed-in ESATS tab using `chrome.scripting.executeScript`. The extension reads the ESATS token from the ESATS page context and sends it as a bearer token when available.
 
@@ -195,22 +196,28 @@ The extension can fall back to cached survey template data if the live template-
 
 #### Review Case 1: Incomplete Assessment Exists
 
-For an assessment with an incomplete assessment ID:
+For an assessment with an incomplete assessment ID in Initial Review Mode:
 
 | Request | Count |
 |---|---:|
 | Last assessment detail | 1 |
 | Last assessment survey questions | 1 |
 | Last assessment answers | 1 |
-| Active/incomplete assessment contacts | 1 |
+| ESATS contact-details summary | 1 |
 | Incomplete assessment detail | 1 |
 | Incomplete assessment survey questions | 1 |
-| Incomplete assessment answers | 1 |
 
 Formula:
 
 ```text
-Incomplete review requests per assessment = 7
+Incomplete initial review requests per assessment = 6
+Run total = 1 + (6 * selected assessment count)
+```
+
+When Review Based on Selected Answers is enabled for incomplete assessments, the extension also loads incomplete assessment answers as `newAnswers`:
+
+```text
+Incomplete selected-answer review requests per assessment = 7
 Run total = 1 + (7 * selected assessment count)
 ```
 
@@ -223,7 +230,7 @@ For completed assessments with no incomplete assessment ID:
 | Last assessment detail | 1 |
 | Last assessment survey questions | 1 |
 | Last assessment answers | 1 |
-| Last assessment contacts | 1 |
+| ESATS contact-details summary | 1 |
 | Latest active survey template detail | 1 |
 | Latest active survey template questions | 1 |
 
@@ -259,8 +266,9 @@ Because validation runs 5 assessments concurrently, 10 assessments are processed
 | Review scenario | Formula | Logical requests |
 |---|---:|---:|
 | 10 completed assessments | `1 + (10 * 6)` | 61 |
-| 10 incomplete assessments | `1 + (10 * 7)` | 71 |
-| Mixed example: 6 completed + 4 incomplete | `1 + (6 * 6) + (4 * 7)` | 65 |
+| 10 incomplete assessments in Initial Review Mode | `1 + (10 * 6)` | 61 |
+| 10 incomplete assessments in selected-answer review mode | `1 + (10 * 7)` | 71 |
+| Mixed example: 6 completed + 4 incomplete in selected-answer review mode | `1 + (6 * 6) + (4 * 7)` | 65 |
 
 Because review runs 3 assessments concurrently, 10 assessments are processed in roughly 4 batches, subject to API response time and retries.
 
@@ -290,41 +298,56 @@ Because review runs 3 assessments concurrently, 10 assessments are processed in 
 4. `validateBatch()` processes up to 5 assessments at a time.
 5. For each assessment, `buildContext()` gathers:
    - Cairo detail
-   - Cairo answers
+   - Cairo answers, normalized by latest answer per `alternateQuestionId`
    - Cairo survey questions
    - Cairo review summary
    - ESATS versions
    - ESATS artifacts
    - GTC export-control vocabulary data
-6. `runValidation()` executes RP1 through RP13.
-7. `scoreCalculator` computes pass/fail/N/A summary and score.
-8. Results are stored under validation storage keys.
-9. Popup renders validation cards and allows Excel export.
+6. RP2 and RP3 can make conditional Cairo question-summary calls and extract URL evidence from either collector-style response data or nested JSON-style collected data.
+7. `runValidation()` executes RP1 through RP13.
+8. RP11, RP12, and RP13 treat unanswered service-account follow-up questions as `NA` when `CSIR-SvcAcct` is `Yes` and RP1 approvals are present.
+9. RP11 passes explicit `Yes` or `No` values, fails other selected values, and only fails an unanswered question when the RP1 approval exception does not apply.
+10. `scoreCalculator` computes pass/fail/N/A summary and score.
+11. Results are stored under validation storage keys.
+12. Popup renders validation cards and allows Excel export.
 
 #### Review Flow
 
 1. User selects assessments.
-2. Popup sends `START_REVIEW` to the service worker.
-3. Service worker creates a run ID and progress object.
-4. `reviewBatch()` loads RP app survey template versions once.
-5. Review runs up to 3 assessments at a time.
-6. For each assessment:
+2. User can optionally open the review settings modal and choose a review mode. The default is Initial Review Mode.
+3. Popup sends `START_REVIEW` to the service worker with the selected review mode.
+4. Service worker creates a run ID and progress object.
+5. `reviewBatch()` loads RP app survey template versions once.
+6. Review runs up to 3 assessments at a time.
+7. For each assessment:
    - It identifies `lastAssessmentId`.
    - It checks whether `incompleteAssessmentId` exists.
    - It loads old questions and answers from the last assessment.
-   - It loads contacts for the active assessment and keeps Responsible Manager and Primary Contact.
-   - If incomplete: it loads incomplete questions and answers.
-   - If completed: it finds the latest released active RP app template and loads its detail/questions.
-7. The converted Python-to-JavaScript review algorithm:
+   - It loads ESATS contact-details summary data and keeps `ApplicationManager` and `BusinessSystemManager`.
+   - If incomplete: it loads the incomplete assessment questions and, when selected-answer mode is enabled, loads the incomplete assessment answers as `newAnswers`.
+   - If completed: it ignores review mode settings, finds the latest released active RP app template, and loads its detail/questions.
+8. The converted Python-to-JavaScript review algorithm:
    - uses `alternateQuestionId` as the stable question key,
+   - selects the latest duplicate answer by `updatedOn`, then `createdOn`, then answer/template IDs,
    - maps old answers to new template questions,
    - validates carried answer values against new options,
    - evaluates route actions and branching logic,
+   - avoids routing through conditions that depend on unreachable questions,
+   - applies no-target route actions as branch guards so default survey order does not leak into hidden questions,
    - traverses reachable questions,
-   - reports reachable unanswered work items.
-8. Results are stored under review storage keys.
-9. Popup renders review result cards.
-10. User can open review notes or download Word review notes.
+   - reports reachable unanswered work items with UI-only reachability reasons.
+9. Results include review basis metadata: review mode, completed/incomplete behavior, old survey template ID, new survey template ID, and whether `newAnswers` was used.
+10. Results are stored under review storage keys.
+11. Popup renders review result cards.
+12. User can open review notes, choose questions, add ASA Notes, and download Word review notes.
+
+Review modes:
+
+| Mode | Applies to | Data used | Notes |
+|---|---|---|---|
+| Initial Review Mode | Completed and incomplete assessments | Old questions, old answers, and new questions | Default mode. Completed assessments always use this behavior. |
+| Review Based on Selected Answers | Incomplete assessments only | Old questions, old answers, new questions, and `newAnswers` | Uses only answers currently present on the incomplete assessment. Completed assessments ignore this setting. |
 
 #### Word Review Notes Generation
 
@@ -338,7 +361,7 @@ The extension generates `.docx` files directly in the browser using OpenXML:
 - Packages the files into a ZIP-compatible DOCX structure
 - Downloads the file through a browser Blob
 
-The Word output includes clickable checkbox content controls using WordprocessingML checkbox controls. The downloaded file name is:
+The Word output includes selected review questions, application metadata, ESATS contact details, `BEMS ID` where available, highlighted ASA Notes, and clickable checkbox content controls using WordprocessingML checkbox controls. The DOCX intentionally excludes UI-only Review Basis and reachability tooltip details. The downloaded file name is:
 
 ```text
 (app name)_RISK-PRofiler_review_notes.docx
@@ -363,9 +386,11 @@ This extension consolidates those tasks into one guided workflow.
 5. Select one or more applications.
 6. Click `Validate Selected` to run automated quality checks.
 7. Click `Review Selected` to generate review findings.
-8. Review results in separate tabs.
-9. Export validation results to Excel when needed.
-10. Download review notes to Word when business-ready documentation is needed.
+8. Use the settings icon next to `Review Selected` when an incomplete-assessment review should use selected `newAnswers`.
+9. Review results in separate tabs.
+10. Open review notes, select the questions to include, and enter ASA Notes when needed.
+11. Export validation results to Excel when needed.
+12. Download review notes to Word when business-ready documentation is needed.
 
 #### Key Outputs
 
@@ -380,8 +405,10 @@ Review output:
 - Completed/incomplete assessment status
 - Survey completed/due/incomplete initiated dates
 - Review item count
-- Responsible Manager and Primary Contact details
-- Word notes with clickable checklist items
+- Review basis details in the UI, including review mode and survey template IDs
+- UI-only reachability details explaining why each question appeared
+- ApplicationManager and BusinessSystemManager contact details
+- Word notes with selected checklist items, ASA Notes, and clickable checkbox controls
 
 #### Impact
 
@@ -399,7 +426,9 @@ The extension improves:
 - The extension does not submit or modify assessments.
 - It reads existing assessment, template, contact, ESATS, and GTC data.
 - It stores results locally in Chrome.
+- It stores selected review mode and ASA Notes locally in Chrome.
 - It creates review and validation artifacts that can be shared with stakeholders.
+- Review Basis and reachability notes help users understand review output in the UI, but are not written into downloaded Word review notes.
 - Final business decisions still belong to the reviewer or assessment owner.
 
 ### 3(b). Technical Project Manager Walkthrough
@@ -442,6 +471,7 @@ User action
 
 - `core/reviewEngine.js`: review data gathering and reachable unanswered work queue algorithm.
 - `core/reviewNotesDocx.js`: Word document generation.
+- `core/answerUtils.js`: answer-list loading and latest-answer normalization by `alternateQuestionId`.
 - `storage/storage.js`: review result persistence.
 - `popup.js`: review UI and download handlers.
 
@@ -460,6 +490,10 @@ Stored keys include:
 - `assessmentContexts`
 - `lastAction`
 - `whatsNewModalState`
+- `reviewMode`
+- `reviewQuestionNotes`
+
+Popup runtime state also keeps the active review-note question selections so the modal and DOCX download use the same selected question set.
 
 #### Error Handling
 
@@ -605,7 +639,7 @@ Load in Chrome:
 ```text
 Extension version: 1.0.0
 Manifest: Chrome Extension Manifest V3
-Primary modes: Validation Mode and Review Mode
+Primary modes: Validation Mode, Initial Review Mode, and Review Based on Selected Answers
 ```
 
 ## Developer Guide: Modifying, Adding, or Removing Checkpoints
@@ -686,7 +720,7 @@ Important context fields:
 |---|---|
 | `context.application` | Normalized assessment list item from Cairo primary assessment data. |
 | `context.assessment` | Cairo assessment detail response. |
-| `context.answers` | Cairo assessment survey answers. |
+| `context.answers` | Cairo assessment survey answers. Helper functions normalize duplicate `alternateQuestionId` records to the latest answer before returning values. |
 | `context.surveyQuestions` | Cairo survey template questions. |
 | `context.questionMap` | Map keyed by `alternateQuestionId`. |
 | `context.reviewSummary` | Cairo review summary data for approval/review-related checks. |
@@ -749,7 +783,7 @@ Useful helpers in `checkpoints/helpers.js`:
 | Helper | Purpose |
 |---|---|
 | `getAnswer(context, questionId)` | Gets one answer by `alternateQuestionId`. |
-| `getAnswers(context)` | Returns normalized answer list. |
+| `getAnswers(context)` | Returns a normalized answer list. Duplicate `alternateQuestionId` records are reduced to the latest answer by `updatedOn`, then `createdOn`, then ID tie breakers. |
 | `getValues(context, questionId)` | Extracts answer values for a question. |
 | `hasAnswer(context, questionId)` | Checks whether a question has any answer value. |
 | `includesValue(context, questionId, expected)` | Checks exact normalized answer match. |
@@ -759,6 +793,8 @@ Useful helpers in `checkpoints/helpers.js`:
 | `isNo(context, questionId)` | Checks whether answer is `No`. |
 | `isSaas(context)` | Checks SaaS-style app type. |
 | `isWebLikeApplication(context)` | Checks web/API/SaaS/PaaS style app type. |
+| `hasRiskProfilerApprovals(context)` | Checks whether Risk Profiler approval/review summary data supports approval-dependent checkpoint exceptions. |
+| `extractHttpUrls(node)` | Walks a nested payload and returns unique HTTP/HTTPS URLs from collector-style or JSON-style question-summary responses. |
 | `findValuesByKeyFragment(node, fragments)` | Searches nested objects for key fragments. |
 | `collectValuesByKey(node, keyName)` | Collects nested values by exact key. |
 | `findAssessmentById(node, assessmentId)` | Finds assessment object in nested review summary. |
@@ -995,6 +1031,8 @@ Most checkpoint logic should use existing `context`. If a checkpoint needs new d
 6. Recalculate request-count formulas if the request runs for every assessment.
 
 Use conditional calls for expensive or rarely needed lookups. Use context-level calls for data required by many checkpoints.
+
+For question-summary payloads that may vary between collector-style structures and JSON-style collected-data structures, prefer `extractHttpUrls()` or shared traversal helpers instead of hardcoding one response shape.
 
 ### Checkpoint Testing Checklist
 
