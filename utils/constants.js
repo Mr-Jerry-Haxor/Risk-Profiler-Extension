@@ -24,8 +24,17 @@ export const CONFIG = {
 
         DEBUG: "debug",
 
-        WHATS_NEW_MODAL: "whatsNewModalState"
+        WHATS_NEW_MODAL: "whatsNewModalState",
+
+        REVIEW_MODE: "reviewMode"
     }
+};
+
+export const REVIEW_MODES = {
+
+    INITIAL: "initial",
+
+    SELECTED_ANSWERS: "selectedAnswers"
 };
 
 export const REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS = [

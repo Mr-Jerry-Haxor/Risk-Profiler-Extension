@@ -445,7 +445,8 @@ REVIEW JOB
 */
 
 async function runReviewJob(
-    assessments
+    assessments,
+    reviewConfig = {}
 ) {
 
     if (
@@ -508,6 +509,8 @@ async function runReviewJob(
             await reviewBatch(
 
                 assessments,
+
+                reviewConfig,
 
                 async progress => {
 
@@ -902,7 +905,9 @@ chrome.runtime.onMessage.addListener(
 
                             runReviewJob(
 
-                                message.assessments
+                                message.assessments,
+
+                                message.reviewConfig || {}
                             ).catch(error => {
 
                                 console.error(

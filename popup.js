@@ -26,7 +26,8 @@ from "./core/reviewNotesDocx.js";
 
 import {
     CONFIG,
-    PREREQUISITE_CHECKS
+    PREREQUISITE_CHECKS,
+    REVIEW_MODES
 }
 from "./utils/constants.js";
 
@@ -74,6 +75,8 @@ let selectedSurveyTo = null;
 
 let surveyDiffRequestId = 0;
 
+let selectedReviewMode = REVIEW_MODES.INITIAL;
+
 /*
 ====================================================
 DOM HELPERS
@@ -99,6 +102,8 @@ async function initialize() {
     await loadAssessments();
 
     await loadReviewQuestionNotes();
+
+    await loadReviewModeSetting();
 
     attachEvents();
 
@@ -424,6 +429,38 @@ function attachEvents() {
         ?.addEventListener(
             "click",
             startReview
+        );
+
+    $("reviewSettingsBtn")
+        ?.addEventListener(
+            "click",
+            openReviewSettingsModal
+        );
+
+    $("closeReviewSettingsModalBtn")
+        ?.addEventListener(
+            "click",
+            closeReviewSettingsModal
+        );
+
+    $("reviewSettingsModal")
+        ?.addEventListener(
+            "click",
+            event => {
+
+                if (
+                    event.target ===
+                    $("reviewSettingsModal")
+                ) {
+                    closeReviewSettingsModal();
+                }
+            }
+        );
+
+    $("saveReviewSettingsBtn")
+        ?.addEventListener(
+            "click",
+            saveReviewModeSetting
         );
 
     $("cancelBtn")
@@ -1070,8 +1107,85 @@ async function startReview() {
             "START_REVIEW",
 
         assessments:
-            selected
+            selected,
+
+        reviewConfig: {
+            mode:
+                selectedReviewMode
+        }
     });
+}
+
+async function loadReviewModeSetting() {
+
+    const data =
+        await chrome.storage.local.get(
+            CONFIG.STORAGE_KEYS.REVIEW_MODE
+        );
+
+    const storedMode =
+        data[CONFIG.STORAGE_KEYS.REVIEW_MODE];
+
+    selectedReviewMode =
+        Object.values(REVIEW_MODES)
+            .includes(storedMode)
+            ? storedMode
+            : REVIEW_MODES.INITIAL;
+
+    renderReviewModeSetting();
+}
+
+function renderReviewModeSetting() {
+
+    document
+        .querySelectorAll("input[name='reviewMode']")
+        .forEach(input => {
+
+            input.checked =
+                input.value === selectedReviewMode;
+        });
+}
+
+function openReviewSettingsModal() {
+
+    renderReviewModeSetting();
+
+    $("reviewSettingsModal")
+        ?.classList.remove(
+            "hidden"
+        );
+}
+
+function closeReviewSettingsModal() {
+
+    $("reviewSettingsModal")
+        ?.classList.add(
+            "hidden"
+        );
+}
+
+async function saveReviewModeSetting() {
+
+    const selectedInput =
+        document.querySelector(
+            "input[name='reviewMode']:checked"
+        );
+
+    const nextMode =
+        Object.values(REVIEW_MODES)
+            .includes(selectedInput?.value)
+            ? selectedInput.value
+            : REVIEW_MODES.INITIAL;
+
+    selectedReviewMode =
+        nextMode;
+
+    await chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.REVIEW_MODE]:
+            selectedReviewMode
+    });
+
+    closeReviewSettingsModal();
 }
 
 /*
@@ -1751,6 +1865,10 @@ function openReviewNotesModal(
     $("reviewNotesMeta").innerHTML =
         result.notesMetaHtml || "";
 
+    renderReviewBasisInfo(
+        result
+    );
+
     ensureReviewSelection(
         result
     );
@@ -1771,6 +1889,95 @@ function closeReviewNotesModal() {
         );
 
     activeReviewNotes = null;
+}
+
+function renderReviewBasisInfo(
+    result
+) {
+
+    const tooltip =
+        $("reviewBasisTooltip");
+
+    const icon =
+        $("reviewBasisInfo");
+
+    if (
+        !tooltip ||
+        !icon
+    ) {
+        return;
+    }
+
+    const basis =
+        result.reviewBasis || {};
+
+    const reviewMode =
+        formatReviewModeLabel(
+            basis.reviewMode ||
+            result.reviewMode
+        );
+
+    const behavior =
+        basis.assessmentBehavior ||
+        (
+            result.status === "Incomplete"
+                ? "Incomplete assessment review uses the incomplete survey template."
+                : "Completed assessment review uses the latest released survey template."
+        );
+
+    const newAnswersUsed =
+        basis.newAnswersUsed === true
+            ? "Yes"
+            : "No";
+
+    tooltip.innerHTML = `
+        <div><strong>Review mode:</strong> ${escapeHtml(reviewMode)}</div>
+        <div><strong>Behavior:</strong> ${escapeHtml(behavior)}</div>
+        <div><strong>Old survey template ID:</strong> ${escapeHtml(basis.oldSurveyTemplateId || result.oldSurveyTemplateId || "N/A")}</div>
+        <div><strong>New survey template ID:</strong> ${escapeHtml(basis.newSurveyTemplateId || result.newSurveyTemplateId || "N/A")}</div>
+        <div><strong>newAnswers used:</strong> ${escapeHtml(newAnswersUsed)}</div>
+    `;
+
+    icon.classList.toggle(
+        "hidden",
+        false
+    );
+}
+
+function formatReviewModeLabel(
+    mode
+) {
+
+    if (
+        mode === "selectedAnswers"
+    ) {
+        return "Review Based on Selected Answers";
+    }
+
+    return "Initial Review Mode";
+}
+
+function reviewReachabilityInfoHtml(
+    reason
+) {
+
+    return `
+        <span
+            class="review-hover-info review-route-info"
+            tabindex="0"
+            aria-label="Reachability reason"
+        >
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="6" r="2"></circle>
+                <circle cx="18" cy="18" r="2"></circle>
+                <path d="M8 6h3a3 3 0 0 1 3 3v6"></path>
+                <path d="m11 12 3 3 3-3"></path>
+            </svg>
+            <span class="review-hover-panel review-route-panel" role="tooltip">
+                ${escapeHtml(reason)}
+            </span>
+        </span>
+    `;
 }
 
 async function loadReviewQuestionNotes() {
@@ -1896,6 +2103,13 @@ function reviewQuestionCardHtml(
             item
         );
 
+    const reachabilityInfo =
+        item.reachabilityReason
+            ? reviewReachabilityInfoHtml(
+                item.reachabilityReason
+            )
+            : "";
+
     return `
         <section class="review-output-item" data-question-key="${escapeHtml(key)}">
             <div class="review-question-toolbar">
@@ -1908,18 +2122,21 @@ function reviewQuestionCardHtml(
                     >
                     <span>Select for download</span>
                 </label>
-                <button
-                    type="button"
-                    class="review-note-icon-btn"
-                    data-key="${escapeHtml(key)}"
-                    title="ASA Notes"
-                    aria-label="ASA Notes"
-                >
-                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 20h9"></path>
-                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
-                    </svg>
-                </button>
+                <div class="review-question-icon-actions">
+                    ${reachabilityInfo}
+                    <button
+                        type="button"
+                        class="review-note-icon-btn"
+                        data-key="${escapeHtml(key)}"
+                        title="ASA Notes"
+                        aria-label="ASA Notes"
+                    >
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9"></path>
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             ${item.status
                 ? `<div class="review-output-status">${escapeHtml(item.status)}</div>`

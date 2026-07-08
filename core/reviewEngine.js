@@ -1,5 +1,6 @@
 import {
     CONFIG,
+    REVIEW_MODES,
     REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS,
     REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD
 } from "../utils/constants.js";
@@ -31,6 +32,21 @@ const REVIEW_SEMANTIC_OPTION_MATCH_IDS =
     new Set(
         REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS
     );
+
+function normalizeReviewConfig(
+    reviewConfig = {}
+) {
+
+    const mode =
+        Object.values(REVIEW_MODES)
+            .includes(reviewConfig?.mode)
+            ? reviewConfig.mode
+            : REVIEW_MODES.INITIAL;
+
+    return {
+        mode
+    };
+}
 
 function cleanText(value) {
     if (value === null || value === undefined) {
@@ -1108,6 +1124,119 @@ function possibleRoutingTargets(
     return targets;
 }
 
+function questionRouteLabel(
+    question
+) {
+
+    return question?.alternateQuestionId ||
+        `Question ${question?.surveyTemplateQuestionId || "N/A"}`;
+}
+
+function actionLogicSummary(
+    action,
+    byId
+) {
+
+    const logics =
+        safeArray(action?.logics);
+
+    if (logics.length === 0) {
+        return "No route condition was defined.";
+    }
+
+    const joiner =
+        logics.some(logic =>
+            logic?.evaluationCondition === "OR"
+        )
+            ? " OR "
+            : " AND ";
+
+    return logics
+        .map(logic => {
+            const question =
+                byId.get(
+                    Number(logic?.surveyTemplateQuestionId)
+                );
+
+            const op =
+                Number(logic?.operationId || 0);
+
+            const operator =
+                op === 2
+                    ? "is not"
+                    : "is";
+
+            return `${questionRouteLabel(question)} ${operator} ${cleanText(logic?.evaluationValue) || "blank"}`;
+        })
+        .join(joiner);
+}
+
+function routingTargetsWithReasons(
+    qid,
+    byId,
+    ordered,
+    indexById,
+    answersById
+) {
+    const question =
+        byId.get(qid);
+
+    const routes = [];
+
+    let canReachLaterActions =
+        true;
+
+    for (const action of sortedRouteActions(question)) {
+        if (
+            !actionHasRoute(action) ||
+            !canReachLaterActions
+        ) {
+            continue;
+        }
+
+        const domain =
+            actionPossibleValues(
+                action,
+                answersById,
+                byId
+            );
+
+        if (domain.has(true)) {
+            const certain =
+                !domain.has(false);
+
+            routes.push({
+                target:
+                    actionTarget(
+                        action,
+                        question,
+                        ordered
+                    ),
+                reason:
+                    `${certain ? "Reached" : "May be reachable"} from ${questionRouteLabel(question)} by conditional routing: ${actionLogicSummary(action, byId)}.`
+            });
+        }
+
+        canReachLaterActions =
+            domain.has(false);
+    }
+
+    if (canReachLaterActions) {
+        routes.push({
+            target:
+                defaultNextQuestionId(
+                    qid,
+                    ordered,
+                    indexById
+                ),
+            reason:
+                `Reached by default survey order after ${questionRouteLabel(question)} because no earlier route was confirmed.`
+        });
+    }
+
+    return routes;
+}
+
 function traverseReachableUnansweredWorkQueue(
     questions,
     answersById
@@ -1150,6 +1279,14 @@ function traverseReachableUnansweredWorkQueue(
     const unanswered =
         new Set();
 
+    const reasons =
+        new Map([
+            [
+                start,
+                "Reached as the first question in the survey path."
+            ]
+        ]);
+
     while (queue.length > 0) {
         const qid =
             queue.shift();
@@ -1173,23 +1310,41 @@ function traverseReachableUnansweredWorkQueue(
             unanswered.add(qid);
         }
 
-        for (const target of possibleRoutingTargets(
+        for (const route of routingTargetsWithReasons(
             qid,
             byId,
             ordered,
             indexById,
             answersById
         )) {
+            const target =
+                route.target;
+
             if (
                 target !== null &&
                 !reachable.has(Number(target))
             ) {
-                queue.push(Number(target));
+                const numericTarget =
+                    Number(target);
+
+                if (
+                    !reasons.has(numericTarget)
+                ) {
+                    reasons.set(
+                        numericTarget,
+                        route.reason
+                    );
+                }
+
+                queue.push(numericTarget);
             }
         }
     }
 
-    return unanswered;
+    return {
+        unanswered,
+        reasons
+    };
 }
 
 function mapByAlternateQuestionId(questions) {
@@ -1244,7 +1399,8 @@ function buildWorkQueueBlocks(
     oldQuestions,
     oldAnswers,
     newQuestions,
-    newAnswers
+    newAnswers,
+    options = {}
 ) {
     const oldByAlt =
         mapByAlternateQuestionId(oldQuestions);
@@ -1252,7 +1408,11 @@ function buildWorkQueueBlocks(
     const newByAlt =
         mapByAlternateQuestionId(newQuestions);
 
+    const useProvidedNewAnswers =
+        options.useProvidedNewAnswers === true;
+
     const activeAnswersRaw =
+        useProvidedNewAnswers ||
         safeArray(newAnswers).length > 0
             ? safeArray(newAnswers)
             : synthesizeNewAnswersFromOld(
@@ -1272,7 +1432,7 @@ function buildWorkQueueBlocks(
             newByAlt
         );
 
-    const workQueueIds =
+    const workQueue =
         traverseReachableUnansweredWorkQueue(
             newQuestions,
             activeAnswersById
@@ -1280,7 +1440,7 @@ function buildWorkQueueBlocks(
 
     return sortedQuestions(newQuestions)
         .filter(question =>
-            workQueueIds.has(
+            workQueue.unanswered.has(
                 Number(question.surveyTemplateQuestionId)
             )
         )
@@ -1326,7 +1486,12 @@ function buildWorkQueueBlocks(
                 answerType:
                     answerType(question),
                 options:
-                    optionDetails(question)
+                    optionDetails(question),
+                reachabilityReason:
+                    workQueue.reasons.get(
+                        Number(question.surveyTemplateQuestionId)
+                    ) ||
+                    "Reachable based on the current survey routing path."
             };
         });
 }
@@ -1727,8 +1892,14 @@ async function loadQuestionsAndDetail(
 
 async function buildReviewResult(
     assessment,
-    surveyTemplates
+    surveyTemplates,
+    reviewConfig = {}
 ) {
+    const normalizedReviewConfig =
+        normalizeReviewConfig(
+            reviewConfig
+        );
+
     const lastAssessmentId =
         assessment.lastAssessmentId ||
         assessment.raw?.lastAssessmentId;
@@ -1772,28 +1943,39 @@ async function buildReviewResult(
     let newContext;
     let newAnswers = [];
     let selectedLatestTemplate = null;
+    let effectiveReviewMode =
+        REVIEW_MODES.INITIAL;
 
     if (incompleteAssessmentId) {
-        const [
-            incompleteContext,
-            incompleteAnswersRaw
-        ] = await Promise.all([
-            loadQuestionsAndDetail(
+        effectiveReviewMode =
+            normalizedReviewConfig.mode;
+
+        const incompleteContext =
+            await loadQuestionsAndDetail(
                 incompleteAssessmentId
-            ),
-            getAssessmentAnswers(
-                incompleteAssessmentId
-            )
-        ]);
+            );
 
         newContext =
             incompleteContext;
 
-        newAnswers =
-            loadAnswerList(
-                incompleteAnswersRaw
-            );
+        if (
+            effectiveReviewMode ===
+            REVIEW_MODES.SELECTED_ANSWERS
+        ) {
+            const incompleteAnswersRaw =
+                await getAssessmentAnswers(
+                    incompleteAssessmentId
+                );
+
+            newAnswers =
+                loadAnswerList(
+                    incompleteAnswersRaw
+                );
+        }
     } else {
+        effectiveReviewMode =
+            REVIEW_MODES.INITIAL;
+
         selectedLatestTemplate =
             findLatestReleasedTemplate(
                 surveyTemplates
@@ -1837,7 +2019,12 @@ async function buildReviewResult(
             oldContext.questions,
             oldAnswers,
             newContext.questions,
-            newAnswers
+            newAnswers,
+            {
+                useProvidedNewAnswers:
+                    effectiveReviewMode ===
+                    REVIEW_MODES.SELECTED_ANSWERS
+            }
         );
 
     const reviewContacts =
@@ -1855,6 +2042,23 @@ async function buildReviewResult(
         status,
         lastAssessmentId,
         incompleteAssessmentId,
+        reviewMode:
+            effectiveReviewMode,
+        reviewBasis: {
+            reviewMode:
+                effectiveReviewMode,
+            assessmentBehavior:
+                status === "Incomplete"
+                    ? "Incomplete assessment review uses the incomplete survey template."
+                    : "Completed assessment review uses the latest released survey template.",
+            oldSurveyTemplateId:
+                oldContext.surveyTemplateId,
+            newSurveyTemplateId:
+                newContext.surveyTemplateId,
+            newAnswersUsed:
+                effectiveReviewMode ===
+                REVIEW_MODES.SELECTED_ANSWERS
+        },
         oldSurveyTemplateId:
             oldContext.surveyTemplateId,
         newSurveyTemplateId:
@@ -1963,9 +2167,15 @@ async function loadReviewSurveyTemplates() {
 
 export async function reviewBatch(
     assessments,
+    reviewConfig = {},
     progressCallback,
     shouldCancel
 ) {
+    const normalizedReviewConfig =
+        normalizeReviewConfig(
+            reviewConfig
+        );
+
     const results = [];
     let completed = 0;
 
@@ -1999,7 +2209,8 @@ export async function reviewBatch(
                         const result =
                             await buildReviewResult(
                                 assessment,
-                                surveyTemplates
+                                surveyTemplates,
+                                normalizedReviewConfig
                             );
 
                         completed += 1;
