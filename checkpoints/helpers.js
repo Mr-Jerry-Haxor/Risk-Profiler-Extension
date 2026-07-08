@@ -1,5 +1,8 @@
 import { fetchJson } from "../api/requestManager.js";
 import { URLS } from "../utils/constants.js";
+import {
+    normalizeAnswersByAlternateQuestionId
+} from "../core/answerUtils.js";
 
 export const STATUS = {
     PASS: "PASS",
@@ -254,28 +257,9 @@ export function getAnswers(
     context
 ) {
 
-    const answers =
-        context?.answers;
-
-    if (
-        Array.isArray(
-            answers
-        )
-    ) {
-
-        return answers;
-    }
-
-    if (
-        Array.isArray(
-            answers?.answers
-        )
-    ) {
-
-        return answers.answers;
-    }
-
-    return [];
+    return normalizeAnswersByAlternateQuestionId(
+        context?.answers
+    );
 }
 
 export function extractAnswerValues(

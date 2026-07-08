@@ -13,6 +13,12 @@ import {
     getSurveyTemplateDetails
 } from "../api/cairoApi.js";
 
+import {
+    getAnswerTimestampMillis,
+    loadAnswerList,
+    normalizeAnswersByAlternateQuestionId
+} from "./answerUtils.js";
+
 const MAX_CONCURRENT_REVIEWS = 3;
 
 const REVIEW_CONTACT_ROLES =
@@ -51,21 +57,6 @@ function safeArray(value) {
     return Array.isArray(value)
         ? value
         : [];
-}
-
-function loadAnswerList(data) {
-    if (Array.isArray(data)) {
-        return data;
-    }
-
-    if (
-        data &&
-        Array.isArray(data.answers)
-    ) {
-        return data.answers;
-    }
-
-    return [];
 }
 
 function category(question) {
@@ -411,10 +402,8 @@ function rawAnswerValues(answer) {
 }
 
 function answerTimestamp(answer) {
-    return cleanText(
-        answer?.updatedOn ||
-        answer?.createdOn ||
-        ""
+    return getAnswerTimestampMillis(
+        answer
     );
 }
 
@@ -519,7 +508,7 @@ function synthesizeNewAnswersFromOld(
 ) {
     const synthesized = [];
 
-    for (const answer of safeArray(oldAnswers)) {
+    for (const answer of normalizeAnswersByAlternateQuestionId(oldAnswers)) {
         const alt =
             answer?.alternateQuestionId;
 
@@ -554,7 +543,7 @@ function normalizeAnswersByAlt(
     const buckets =
         new Map();
 
-    for (const answer of safeArray(answers)) {
+    for (const answer of normalizeAnswersByAlternateQuestionId(answers)) {
         const alt =
             answer?.alternateQuestionId;
 
@@ -1785,13 +1774,25 @@ async function buildReviewResult(
     let selectedLatestTemplate = null;
 
     if (incompleteAssessmentId) {
-        const incompleteContext =
-            await loadQuestionsAndDetail(
+        const [
+            incompleteContext,
+            incompleteAnswersRaw
+        ] = await Promise.all([
+            loadQuestionsAndDetail(
                 incompleteAssessmentId
-            );
+            ),
+            getAssessmentAnswers(
+                incompleteAssessmentId
+            )
+        ]);
 
         newContext =
             incompleteContext;
+
+        newAnswers =
+            loadAnswerList(
+                incompleteAnswersRaw
+            );
     } else {
         selectedLatestTemplate =
             findLatestReleasedTemplate(
