@@ -923,6 +923,55 @@ function actionHasRoute(action) {
     );
 }
 
+function guardedFallthroughQuestionId(
+    qid,
+    question,
+    ordered,
+    indexById
+) {
+    const routedTargets =
+        new Set(
+            sortedRouteActions(question)
+                .filter(action =>
+                    actionHasRoute(action)
+                )
+                .map(action =>
+                    actionTarget(
+                        action,
+                        question,
+                        ordered
+                    )
+                )
+                .filter(target =>
+                    target !== null
+                )
+                .map(target =>
+                    Number(target)
+                )
+        );
+
+    let candidate =
+        defaultNextQuestionId(
+            qid,
+            ordered,
+            indexById
+        );
+
+    while (
+        candidate !== null &&
+        routedTargets.has(Number(candidate))
+    ) {
+        candidate =
+            defaultNextQuestionId(
+                Number(candidate),
+                ordered,
+                indexById
+            );
+    }
+
+    return candidate;
+}
+
 function logicPossibleValues(
     logic,
     answersById,
@@ -1132,6 +1181,20 @@ function possibleRoutingTargets(
             );
         }
 
+        if (
+            !actionHasRoute(action) &&
+            domain.has(true)
+        ) {
+            targets.add(
+                guardedFallthroughQuestionId(
+                    qid,
+                    question,
+                    ordered,
+                    indexById
+                )
+            );
+        }
+
         canReachLaterActions =
             domain.has(false);
     }
@@ -1243,6 +1306,26 @@ function routingTargetsWithReasons(
                     ),
                 reason:
                     `${certain ? "Reached" : "May be reachable"} from ${questionRouteLabel(question)} by conditional routing: ${actionLogicSummary(action, byId)}.`
+            });
+        }
+
+        if (
+            !actionHasRoute(action) &&
+            domain.has(true)
+        ) {
+            const certain =
+                !domain.has(false);
+
+            routes.push({
+                target:
+                    guardedFallthroughQuestionId(
+                        qid,
+                        question,
+                        ordered,
+                        indexById
+                    ),
+                reason:
+                    `${certain ? "Reached" : "May be reachable"} by guarded survey order after ${questionRouteLabel(question)}: ${actionLogicSummary(action, byId)}.`
             });
         }
 
