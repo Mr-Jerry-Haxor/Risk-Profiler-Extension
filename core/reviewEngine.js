@@ -926,7 +926,8 @@ function actionHasRoute(action) {
 function logicPossibleValues(
     logic,
     answersById,
-    byId
+    byId,
+    reachableIds = null
 ) {
     const refQid =
         Number(logic?.surveyTemplateQuestionId);
@@ -938,14 +939,32 @@ function logicPossibleValues(
         ]);
     }
 
-    const selected =
-        answersById.get(refQid);
-
     const operationId =
         Number(logic?.operationId || 0);
 
     const expected =
         cleanText(logic?.evaluationValue);
+
+    if (
+        reachableIds &&
+        typeof reachableIds.has === "function" &&
+        !reachableIds.has(refQid)
+    ) {
+        if ([1, 4].includes(operationId)) {
+            return new Set([
+                false
+            ]);
+        }
+
+        if (operationId === 2) {
+            return new Set([
+                true
+            ]);
+        }
+    }
+
+    const selected =
+        answersById.get(refQid);
 
     if (selected !== undefined) {
         if ([1, 4].includes(operationId)) {
@@ -1001,7 +1020,8 @@ function logicPossibleValues(
 function actionPossibleValues(
     action,
     answersById,
-    byId
+    byId,
+    reachableIds = null
 ) {
     const logics =
         safeArray(action?.logics);
@@ -1017,7 +1037,8 @@ function actionPossibleValues(
             logicPossibleValues(
                 logic,
                 answersById,
-                byId
+                byId,
+                reachableIds
             )
         );
 
@@ -1071,7 +1092,8 @@ function possibleRoutingTargets(
     byId,
     ordered,
     indexById,
-    answersById
+    answersById,
+    reachableIds = null
 ) {
     const question =
         byId.get(qid);
@@ -1084,7 +1106,6 @@ function possibleRoutingTargets(
 
     for (const action of sortedRouteActions(question)) {
         if (
-            !actionHasRoute(action) ||
             !canReachLaterActions
         ) {
             continue;
@@ -1094,10 +1115,14 @@ function possibleRoutingTargets(
             actionPossibleValues(
                 action,
                 answersById,
-                byId
+                byId,
+                reachableIds
             );
 
-        if (domain.has(true)) {
+        if (
+            actionHasRoute(action) &&
+            domain.has(true)
+        ) {
             targets.add(
                 actionTarget(
                     action,
@@ -1176,7 +1201,8 @@ function routingTargetsWithReasons(
     byId,
     ordered,
     indexById,
-    answersById
+    answersById,
+    reachableIds = null
 ) {
     const question =
         byId.get(qid);
@@ -1188,7 +1214,6 @@ function routingTargetsWithReasons(
 
     for (const action of sortedRouteActions(question)) {
         if (
-            !actionHasRoute(action) ||
             !canReachLaterActions
         ) {
             continue;
@@ -1198,10 +1223,14 @@ function routingTargetsWithReasons(
             actionPossibleValues(
                 action,
                 answersById,
-                byId
+                byId,
+                reachableIds
             );
 
-        if (domain.has(true)) {
+        if (
+            actionHasRoute(action) &&
+            domain.has(true)
+        ) {
             const certain =
                 !domain.has(false);
 
@@ -1315,7 +1344,8 @@ function traverseReachableUnansweredWorkQueue(
             byId,
             ordered,
             indexById,
-            answersById
+            answersById,
+            reachable
         )) {
             const target =
                 route.target;
