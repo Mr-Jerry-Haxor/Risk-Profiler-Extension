@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Rest Profiler Review and Validate Automation</title>
+    <title>Risk Profiler Review and Validate Automation</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
             </div>
 
             <h1>
-                Rest Profiler Review and Validate Automation
+                Risk Profiler Review and Validate Automation
             </h1>
         </div>
 
@@ -29,8 +29,21 @@
             </span>
 
             <button id="refreshBtn"
-                    class="icon-btn">
+                    class="icon-btn"
+                    title="Refresh assessments"
+                    aria-label="Refresh assessments">
                 ↻
+            </button>
+
+            <button id="layoutSettingsBtn"
+                    class="icon-btn"
+                    type="button"
+                    title="Layout settings"
+                    aria-label="Layout settings">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.95 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.03V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.96 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path>
+                </svg>
             </button>
 
         </div>
@@ -615,6 +628,107 @@
                 id="reviewNotesContent"
                 class="review-notes-content"
             ></div>
+        </div>
+    </div>
+
+    <div id="layoutSettingsModal" class="modal hidden">
+        <div class="modal-content layout-settings-modal-content"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="layoutSettingsTitle">
+            <div class="modal-header">
+                <h2 id="layoutSettingsTitle">Plugin layout</h2>
+                <button id="closeLayoutSettingsBtn"
+                        class="close-icon-btn"
+                        type="button"
+                        aria-label="Close layout settings">&times;</button>
+            </div>
+            <div class="layout-settings-body">
+                <label class="layout-mode-option">
+                    <input type="radio" name="pluginLayout" value="popup">
+                    <span>
+                        <strong>Pop-up mode</strong>
+                        <small>Open the current layout from the Edge toolbar. This is the default.</small>
+                    </span>
+                </label>
+                <label class="layout-mode-option">
+                    <input type="radio" name="pluginLayout" value="side-pane">
+                    <span>
+                        <strong>Side-pane mode</strong>
+                        <small>Keep the extension open beside the current tab and adapt it to the pane size.</small>
+                    </span>
+                </label>
+                <section id="asaSettingsSection" class="asa-settings-section hidden">
+                    <div class="setting-toggle-row">
+                        <span>
+                            <strong>ASA Mode</strong>
+                            <small>Enable ASA review actions and configuration.</small>
+                        </span>
+                        <label class="toggle-switch">
+                            <input id="asaModeToggle" type="checkbox">
+                            <span class="toggle-slider" aria-hidden="true"></span>
+                        </label>
+                    </div>
+                    <div id="emailTemplateSettings" class="email-template-settings hidden">
+                        <div class="setting-toggle-row">
+                            <span>
+                                <strong>Email Template</strong>
+                                <small>Enable a reusable email template for reviewed assessments.</small>
+                            </span>
+                            <label class="toggle-switch">
+                                <input id="emailTemplateToggle" type="checkbox">
+                                <span class="toggle-slider" aria-hidden="true"></span>
+                            </label>
+                        </div>
+                        <div id="emailTemplateEditorSection" class="email-template-editor-section hidden">
+                            <label class="field-label" for="emailTemplateEditor">
+                                Email body
+                            </label>
+                            <div class="rich-text-toolbar"
+                                 role="toolbar"
+                                 aria-label="Email template formatting">
+                                <button type="button" data-rich-command="bold" title="Bold"><strong>B</strong></button>
+                                <button type="button" data-rich-command="italic" title="Italic"><em>I</em></button>
+                                <button type="button" data-rich-command="underline" title="Underline"><u>U</u></button>
+                                <button type="button" data-rich-command="insertUnorderedList" title="Bulleted list">• List</button>
+                            </div>
+                            <div id="emailTemplateEditor"
+                                 class="rich-text-editor"
+                                 contenteditable="true"
+                                 role="textbox"
+                                 aria-multiline="true"
+                                 data-placeholder="Write and format the email template here..."></div>
+                            <div class="template-variable-row">
+                                <label class="field-label" for="templateVariableSelect">
+                                    Template variable
+                                </label>
+                                <select id="templateVariableSelect" class="input">
+                                    <option value="">Select a variable</option>
+                                    <option value="{{ASSET_NAME}}">Asset Name</option>
+                                    <option value="{{ASSET_ID}}">Asset ID</option>
+                                    <option value="{{DUE_DATE}}">Due Date</option>
+                                    <option value="{{LAST_SURVEY_COMPLETED_ON}}">Last Survey Completed On</option>
+                                    <option value="{{INCOMPLETE_ASSESSMENT_ID}}">Incomplete Assessment ID</option>
+                                </select>
+                                <div id="templatePlaceholderDisplay"
+                                     class="template-placeholder-display"
+                                     aria-live="polite"></div>
+                                <button id="copyTemplatePlaceholderBtn"
+                                        class="btn-secondary hidden"
+                                        type="button">
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <p id="layoutSettingsStatus" class="layout-settings-status" role="status"></p>
+            <div class="layout-settings-actions">
+                <button id="saveLayoutSettingsBtn" class="btn-primary" type="button">
+                    Apply
+                </button>
+            </div>
         </div>
     </div>
 

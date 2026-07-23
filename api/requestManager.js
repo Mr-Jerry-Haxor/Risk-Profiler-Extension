@@ -288,9 +288,16 @@ async function fetchFromTrustedPage(
 
                     } catch (error) {
 
-                        console.log("ESATS token:", token);
-                        console.log("Request URL:", requestUrl);
-                        console.log("Headers:", headers);
+                        console.info(
+                            "Trusted page request failed.",
+                            {
+                                method:
+                                    "GET",
+                                errorName:
+                                    error?.name ||
+                                    "Error"
+                            }
+                        );
                         return {
                             ok:
                                 false,

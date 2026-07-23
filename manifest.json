@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
 
-  "name": "Rest Profiler Review and Validate Automation",
+  "name": "Risk Profiler Review and Validate Automation",
 
   "version": "1.0.0",
 
@@ -12,7 +12,8 @@
     "unlimitedStorage",
     "alarms",
     "tabs",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
 
   "host_permissions": [
@@ -39,7 +40,11 @@
   },
 
   "action": {
-    "default_title": "Rest Profiler Review and Validate Automation",
+    "default_title": "Risk Profiler Review and Validate Automation",
     "default_popup": "popup.html"
+  },
+
+  "side_panel": {
+    "default_path": "popup.html?view=side-pane"
   }
 }

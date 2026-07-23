@@ -50,6 +50,66 @@ let validationStartedAt = null;
 
 let reviewStartedAt = null;
 
+const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
+
+async function configurePluginLayout(
+    requestedMode
+) {
+
+    const mode =
+        requestedMode === "side-pane"
+            ? "side-pane"
+            : "popup";
+
+    await chrome.sidePanel.setOptions({
+        path:
+            "popup.html?view=side-pane",
+        enabled:
+            mode === "side-pane"
+    });
+
+    await chrome.sidePanel.setPanelBehavior({
+        openPanelOnActionClick:
+            mode === "side-pane"
+    });
+
+    await chrome.action.setPopup({
+        popup:
+            mode === "popup"
+                ? "popup.html"
+                : ""
+    });
+
+    await chrome.storage.local.set({
+        [PLUGIN_LAYOUT_STORAGE_KEY]:
+            mode
+    });
+
+    return mode;
+}
+
+async function restorePluginLayout() {
+
+    const stored =
+        await chrome.storage.local.get(
+            PLUGIN_LAYOUT_STORAGE_KEY
+        );
+
+    return configurePluginLayout(
+        stored[PLUGIN_LAYOUT_STORAGE_KEY]
+    );
+}
+
+restorePluginLayout().catch(
+    error => {
+
+        console.error(
+            "Unable to restore plugin layout:",
+            error
+        );
+    }
+);
+
 /*
 ====================================================
 HELPERS
@@ -962,6 +1022,19 @@ chrome.runtime.onMessage.addListener(
 
                             break;
 
+                        case "SET_PLUGIN_LAYOUT":
+
+                            sendResponse({
+                                success:
+                                    true,
+                                mode:
+                                    await configurePluginLayout(
+                                        message.mode
+                                    )
+                            });
+
+                            break;
+
                         case "STOP_REVIEW":
 
                             reviewCancellationRequested = true;
@@ -1036,6 +1109,8 @@ ALARM REFRESH
 chrome.runtime.onInstalled.addListener(
     async () => {
 
+        await restorePluginLayout();
+
         chrome.alarms.create(
 
             "assessment_refresh",
@@ -1061,6 +1136,8 @@ chrome.runtime.onStartup.addListener(
     async () => {
 
         try {
+
+            await restorePluginLayout();
 
             await refreshAssessments();
 

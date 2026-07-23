@@ -26,9 +26,13 @@ export const CONFIG = {
 
         WHATS_NEW_MODAL: "whatsNewModalState",
 
-        REVIEW_MODE: "reviewMode"
+        REVIEW_MODE: "reviewMode",
+
+        ASA_SETTINGS: "asaSettings"
     }
 };
+
+export const ASA_MODE = true;
 
 export const REVIEW_MODES = {
 

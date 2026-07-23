@@ -103,6 +103,23 @@ h1 {
     line-height: 1.2;
 }
 
+#layoutSettingsBtn svg {
+
+    width: 17px;
+
+    height: 17px;
+
+    fill: none;
+
+    stroke: currentColor;
+
+    stroke-width: 1.8;
+
+    stroke-linecap: round;
+
+    stroke-linejoin: round;
+}
+
 .card {
 
     background: white;
@@ -1223,6 +1240,528 @@ summary {
     padding: 10px 16px;
 
     border-radius: 10px;
+}
+
+.layout-settings-modal-content {
+
+    width: min(90%, 500px);
+
+    height: auto;
+
+    max-height: 86vh;
+}
+
+.close-icon-btn {
+
+    border: 0;
+
+    background: transparent;
+
+    color: var(--muted);
+
+    cursor: pointer;
+
+    font-size: 24px;
+
+    line-height: 1;
+}
+
+.layout-settings-body {
+
+    display: grid;
+
+    gap: 12px;
+}
+
+.layout-mode-option {
+
+    display: grid;
+
+    grid-template-columns: 18px minmax(0, 1fr);
+
+    gap: 12px;
+
+    align-items: flex-start;
+
+    padding: 14px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    background: var(--card);
+
+    cursor: pointer;
+}
+
+.layout-mode-option:hover,
+.layout-mode-option:has(input:checked) {
+
+    border-color: #7c9cff;
+
+    background: #f4f7ff;
+}
+
+.layout-mode-option input {
+
+    margin-top: 3px;
+}
+
+.layout-mode-option strong,
+.layout-mode-option small {
+
+    display: block;
+}
+
+.layout-mode-option small {
+
+    margin-top: 4px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    line-height: 1.45;
+}
+
+.layout-settings-status {
+
+    min-height: 18px;
+
+    margin: 12px 0 0;
+
+    color: var(--muted);
+
+    font-size: 12px;
+}
+
+.layout-settings-actions {
+
+    display: flex;
+
+    justify-content: flex-end;
+}
+
+.layout-settings-actions .btn-primary {
+
+    width: auto;
+
+    min-width: 96px;
+}
+
+.asa-settings-section {
+
+    display: grid;
+
+    gap: 12px;
+
+    padding-top: 14px;
+
+    border-top: 1px solid var(--border);
+}
+
+.asa-settings-section.hidden,
+.email-template-settings.hidden,
+.email-template-editor-section.hidden {
+
+    display: none;
+}
+
+.setting-toggle-row {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 16px;
+}
+
+.setting-toggle-row strong,
+.setting-toggle-row small {
+
+    display: block;
+}
+
+.setting-toggle-row small {
+
+    margin-top: 4px;
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    line-height: 1.4;
+}
+
+.toggle-switch {
+
+    position: relative;
+
+    width: 44px;
+
+    height: 24px;
+
+    flex: 0 0 44px;
+}
+
+.toggle-switch input {
+
+    width: 1px;
+
+    height: 1px;
+
+    opacity: 0;
+}
+
+.toggle-slider {
+
+    position: absolute;
+
+    inset: 0;
+
+    border-radius: 999px;
+
+    background: #cbd5e1;
+
+    cursor: pointer;
+
+    transition: background .16s ease;
+}
+
+.toggle-slider::before {
+
+    position: absolute;
+
+    width: 18px;
+
+    height: 18px;
+
+    left: 3px;
+
+    top: 3px;
+
+    border-radius: 50%;
+
+    background: #fff;
+
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+
+    content: "";
+
+    transition: transform .16s ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+
+    background: #315fd6;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+
+    transform: translateX(20px);
+}
+
+.toggle-switch input:focus-visible + .toggle-slider {
+
+    outline: 2px solid rgba(49, 95, 214, .35);
+
+    outline-offset: 2px;
+}
+
+.email-template-settings {
+
+    display: grid;
+
+    gap: 14px;
+
+    padding: 14px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    background: #fbfcff;
+}
+
+.email-template-editor-section {
+
+    display: grid;
+
+    gap: 8px;
+}
+
+.rich-text-toolbar {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 6px;
+}
+
+.rich-text-toolbar button {
+
+    min-width: 34px;
+
+    min-height: 32px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 7px;
+
+    background: #fff;
+
+    color: var(--text);
+
+    cursor: pointer;
+}
+
+.rich-text-toolbar button:hover {
+
+    border-color: #9bb3f0;
+
+    background: #f4f7ff;
+}
+
+.rich-text-editor {
+
+    min-height: 150px;
+
+    max-height: 280px;
+
+    overflow-y: auto;
+
+    padding: 12px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    background: #fff;
+
+    color: var(--text);
+
+    font-size: 13px;
+
+    line-height: 1.5;
+}
+
+.rich-text-editor:focus {
+
+    border-color: #7c9cff;
+
+    outline: 2px solid rgba(124, 156, 255, .18);
+}
+
+.rich-text-editor:empty::before {
+
+    color: var(--muted);
+
+    content: attr(data-placeholder);
+
+    pointer-events: none;
+}
+
+.template-variable-row {
+
+    display: grid;
+
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto) auto;
+
+    align-items: end;
+
+    gap: 8px;
+}
+
+.template-variable-row .field-label {
+
+    grid-column: 1 / -1;
+}
+
+.template-variable-row .input {
+
+    margin-bottom: 0;
+}
+
+.template-placeholder-display {
+
+    min-height: 40px;
+
+    padding: 10px;
+
+    border: 1px dashed var(--border);
+
+    border-radius: 8px;
+
+    background: #fff;
+
+    color: #294fb3;
+
+    font-family: Consolas, monospace;
+
+    font-size: 12px;
+
+    overflow-wrap: anywhere;
+}
+
+.send-review-email-btn {
+
+    border-color: rgba(49, 95, 214, .35);
+
+    color: #294fb3;
+
+    font-weight: 700;
+}
+
+body.side-pane {
+
+    width: 100%;
+
+    min-width: 0;
+
+    min-height: 100vh;
+}
+
+body.side-pane .app {
+
+    width: 100%;
+
+    max-width: 650px;
+
+    min-width: 0;
+
+    margin: 0 auto;
+}
+
+body.side-pane .header,
+body.side-pane .card-title-row,
+body.side-pane .filters,
+body.side-pane .actions,
+body.side-pane .results-actions {
+
+    flex-wrap: wrap;
+}
+
+body.side-pane .modal-content {
+
+    width: calc(100% - 24px);
+
+    max-width: none;
+}
+
+body.side-pane .prereq-list {
+
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(
+                min(180px, 100%),
+                1fr
+            )
+        );
+}
+
+body.side-pane .prerequisites-card .tooltip-wrap {
+
+    position: static;
+}
+
+body.side-pane .prerequisites-card .tooltip-panel {
+
+    left: 12px;
+
+    right: 12px;
+
+    width: auto;
+}
+
+@media (max-width: 520px) {
+
+    body.side-pane .app {
+
+        padding: 12px;
+
+        gap: 12px;
+    }
+
+    body.side-pane .header {
+
+        align-items: flex-start;
+
+        gap: 10px;
+    }
+
+    body.side-pane .header-actions {
+
+        width: 100%;
+
+        flex-wrap: wrap;
+    }
+
+    body.side-pane .version-label {
+
+        flex: 1 1 100%;
+
+        white-space: normal;
+    }
+
+    body.side-pane .grid-2,
+    body.side-pane .survey-version-picker .grid-2,
+    body.side-pane .run-actions,
+    body.side-pane .result-tabs {
+
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    body.side-pane .selection-actions,
+    body.side-pane .review-action-group,
+    body.side-pane .review-card-header,
+    body.side-pane .review-output-title-row,
+    body.side-pane .review-question-toolbar,
+    body.side-pane .review-output-id-row {
+
+        flex-wrap: wrap;
+    }
+
+    body.side-pane .selection-actions > button,
+    body.side-pane .review-action-group > .review-action-btn {
+
+        flex: 1 1 140px;
+    }
+
+    body.side-pane .card,
+    body.side-pane .assessment-meta,
+    body.side-pane .review-card-title {
+
+        min-width: 0;
+
+        overflow-wrap: anywhere;
+    }
+
+    body.side-pane .btn-primary,
+    body.side-pane .btn-secondary {
+
+        max-width: 100%;
+
+        white-space: normal;
+    }
+
+    body.side-pane .layout-settings-actions .btn-primary {
+
+        width: 100%;
+    }
+
+    body.side-pane .template-variable-row {
+
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    body.side-pane .template-placeholder-display {
+
+        grid-column: 1 / -1;
+    }
 }
 
 .copy-review-notes-btn {

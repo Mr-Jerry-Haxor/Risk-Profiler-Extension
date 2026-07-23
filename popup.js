@@ -26,6 +26,7 @@ from "./core/reviewNotesDocx.js";
 
 import {
     CONFIG,
+    ASA_MODE,
     PREREQUISITE_CHECKS,
     REVIEW_MODES
 }
@@ -77,6 +78,19 @@ let surveyDiffRequestId = 0;
 
 let selectedReviewMode = REVIEW_MODES.INITIAL;
 
+let asaSettings = {
+    enabled:
+        false,
+    emailTemplateEnabled:
+        false,
+    emailTemplateHtml:
+        ""
+};
+
+const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
+
+const DEFAULT_PLUGIN_LAYOUT = "popup";
+
 /*
 ====================================================
 DOM HELPERS
@@ -98,6 +112,15 @@ document.addEventListener(
 );
 
 async function initialize() {
+
+    document.body.classList.toggle(
+        "side-pane",
+        new URLSearchParams(location.search).get("view") === "side-pane"
+    );
+
+    await loadPluginLayoutSetting();
+
+    await loadAsaSettings();
 
     await loadAssessments();
 
@@ -135,6 +158,400 @@ async function loadAssessments() {
     populateOwnerFilter();
 
     renderAssessments();
+}
+
+async function loadPluginLayoutSetting() {
+
+    const stored =
+        await chrome.storage.local.get(
+            PLUGIN_LAYOUT_STORAGE_KEY
+        );
+
+    const mode =
+        stored[PLUGIN_LAYOUT_STORAGE_KEY] === "side-pane"
+            ? "side-pane"
+            : DEFAULT_PLUGIN_LAYOUT;
+
+    const option =
+        document.querySelector(
+            `input[name="pluginLayout"][value="${mode}"]`
+        );
+
+    if (option) {
+
+        option.checked = true;
+    }
+}
+
+async function loadAsaSettings() {
+
+    const section =
+        $("asaSettingsSection");
+
+    if (!ASA_MODE) {
+
+        section?.classList.add(
+            "hidden"
+        );
+
+        return;
+    }
+
+    section?.classList.remove(
+        "hidden"
+    );
+
+    const stored =
+        await chrome.storage.local.get(
+            CONFIG.STORAGE_KEYS.ASA_SETTINGS
+        );
+
+    const value =
+        stored[CONFIG.STORAGE_KEYS.ASA_SETTINGS] || {};
+
+    asaSettings = {
+        enabled:
+            value.enabled === true,
+        emailTemplateEnabled:
+            value.emailTemplateEnabled === true,
+        emailTemplateHtml:
+            typeof value.emailTemplateHtml === "string"
+                ? sanitizeRichText(
+                    value.emailTemplateHtml
+                )
+                : ""
+    };
+
+    renderAsaSettings();
+}
+
+function renderAsaSettings() {
+
+    if (!ASA_MODE) {
+
+        return;
+    }
+
+    const asaToggle =
+        $("asaModeToggle");
+
+    const emailToggle =
+        $("emailTemplateToggle");
+
+    const editor =
+        $("emailTemplateEditor");
+
+    if (asaToggle) {
+
+        asaToggle.checked =
+            asaSettings.enabled;
+    }
+
+    if (emailToggle) {
+
+        emailToggle.checked =
+            asaSettings.emailTemplateEnabled;
+    }
+
+    if (
+        editor &&
+        editor.innerHTML !== asaSettings.emailTemplateHtml
+    ) {
+
+        editor.innerHTML =
+            asaSettings.emailTemplateHtml;
+    }
+
+    $("emailTemplateSettings")
+        ?.classList.toggle(
+            "hidden",
+            !asaSettings.enabled
+        );
+
+    $("emailTemplateEditorSection")
+        ?.classList.toggle(
+            "hidden",
+            !asaSettings.enabled ||
+            !asaSettings.emailTemplateEnabled
+        );
+}
+
+function readAsaSettingsFromUi() {
+
+    if (!ASA_MODE) {
+
+        return asaSettings;
+    }
+
+    return {
+        enabled:
+            $("asaModeToggle")?.checked === true,
+        emailTemplateEnabled:
+            $("emailTemplateToggle")?.checked === true,
+        emailTemplateHtml:
+            sanitizeRichText(
+                $("emailTemplateEditor")?.innerHTML || ""
+            )
+    };
+}
+
+function sanitizeRichText(
+    html
+) {
+
+    const template =
+        document.createElement(
+            "template"
+        );
+
+    template.innerHTML =
+        String(html || "");
+
+    const allowed =
+        new Set([
+            "B",
+            "STRONG",
+            "I",
+            "EM",
+            "U",
+            "BR",
+            "DIV",
+            "P",
+            "UL",
+            "OL",
+            "LI"
+        ]);
+
+    [
+        ...template.content.querySelectorAll(
+            "*"
+        )
+    ].forEach(element => {
+
+        if (!allowed.has(element.tagName)) {
+
+            element.replaceWith(
+                ...element.childNodes
+            );
+
+            return;
+        }
+
+        [
+            ...element.attributes
+        ].forEach(attribute =>
+            element.removeAttribute(
+                attribute.name
+            )
+        );
+    });
+
+    return template.innerHTML;
+}
+
+function updateTemplatePlaceholderDisplay() {
+
+    const placeholder =
+        $("templateVariableSelect")
+            ?.value || "";
+
+    const display =
+        $("templatePlaceholderDisplay");
+
+    const copyButton =
+        $("copyTemplatePlaceholderBtn");
+
+    if (display) {
+
+        display.textContent =
+            placeholder;
+    }
+
+    copyButton?.classList.toggle(
+        "hidden",
+        !placeholder
+    );
+}
+
+async function copySelectedTemplatePlaceholder() {
+
+    const placeholder =
+        $("templateVariableSelect")
+            ?.value || "";
+
+    if (!placeholder) {
+
+        return;
+    }
+
+    try {
+
+        await navigator.clipboard.writeText(
+            placeholder
+        );
+
+    } catch {
+
+        const textarea =
+            document.createElement(
+                "textarea"
+            );
+
+        textarea.value =
+            placeholder;
+
+        document.body.appendChild(
+            textarea
+        );
+
+        textarea.select();
+
+        document.execCommand(
+            "copy"
+        );
+
+        textarea.remove();
+    }
+
+    const button =
+        $("copyTemplatePlaceholderBtn");
+
+    if (!button) {
+
+        return;
+    }
+
+    const original =
+        button.textContent;
+
+    button.textContent =
+        "Copied";
+
+    window.setTimeout(
+        () => {
+
+            button.textContent =
+                original;
+        },
+        900
+    );
+}
+
+function openLayoutSettingsModal() {
+
+    $("layoutSettingsStatus").textContent =
+        "";
+
+    renderAsaSettings();
+
+    $("layoutSettingsModal")
+        ?.classList.remove(
+            "hidden"
+        );
+}
+
+function closeLayoutSettingsModal() {
+
+    $("layoutSettingsModal")
+        ?.classList.add(
+            "hidden"
+        );
+}
+
+async function savePluginLayoutSetting() {
+
+    const selected =
+        document.querySelector(
+            'input[name="pluginLayout"]:checked'
+        );
+
+    const saveButton =
+        $("saveLayoutSettingsBtn");
+
+    const status =
+        $("layoutSettingsStatus");
+
+    if (!selected || !saveButton || !status) {
+
+        return;
+    }
+
+    saveButton.disabled = true;
+    status.textContent =
+        "Applying layout…";
+
+    try {
+
+        const mode =
+            selected.value === "side-pane"
+                ? "side-pane"
+                : DEFAULT_PLUGIN_LAYOUT;
+
+        const response =
+            await chrome.runtime.sendMessage({
+                action:
+                    "SET_PLUGIN_LAYOUT",
+                mode
+            });
+
+        if (!response?.success) {
+
+            throw new Error(
+                response?.error ||
+                "Unable to update the plugin layout."
+            );
+        }
+
+        if (ASA_MODE) {
+
+            asaSettings =
+                readAsaSettingsFromUi();
+
+            await chrome.storage.local.set({
+                [CONFIG.STORAGE_KEYS.ASA_SETTINGS]:
+                    asaSettings
+            });
+        }
+
+        if (
+            mode === "side-pane" &&
+            !document.body.classList.contains(
+                "side-pane"
+            )
+        ) {
+
+            const currentWindow =
+                await chrome.windows.getCurrent();
+
+            await chrome.sidePanel.open({
+                windowId:
+                    currentWindow.id
+            });
+        }
+
+        status.textContent =
+            mode === "side-pane"
+                ? "Side-pane mode is active."
+                : "Pop-up mode is active.";
+
+        renderReviewResults(
+            reviewResults
+        );
+
+        window.setTimeout(
+            closeLayoutSettingsModal,
+            700
+        );
+
+    } catch (error) {
+
+        status.textContent =
+            error.message;
+
+    } finally {
+
+        saveButton.disabled = false;
+    }
 }
 
 function populateOwnerFilter() {
@@ -423,6 +840,93 @@ function attachEvents() {
         ?.addEventListener(
             "click",
             startValidation
+        );
+
+    $("layoutSettingsBtn")
+        ?.addEventListener(
+            "click",
+            openLayoutSettingsModal
+        );
+
+    $("closeLayoutSettingsBtn")
+        ?.addEventListener(
+            "click",
+            closeLayoutSettingsModal
+        );
+
+    $("layoutSettingsModal")
+        ?.addEventListener(
+            "click",
+            event => {
+
+                if (event.target.id === "layoutSettingsModal") {
+
+                    closeLayoutSettingsModal();
+                }
+            }
+        );
+
+    $("saveLayoutSettingsBtn")
+        ?.addEventListener(
+            "click",
+            savePluginLayoutSetting
+        );
+
+    $("asaModeToggle")
+        ?.addEventListener(
+            "change",
+            () => {
+
+                asaSettings =
+                    readAsaSettingsFromUi();
+
+                renderAsaSettings();
+            }
+        );
+
+    $("emailTemplateToggle")
+        ?.addEventListener(
+            "change",
+            () => {
+
+                asaSettings =
+                    readAsaSettingsFromUi();
+
+                renderAsaSettings();
+            }
+        );
+
+    document
+        .querySelectorAll(
+            "[data-rich-command]"
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => {
+
+                    $("emailTemplateEditor")
+                        ?.focus();
+
+                    document.execCommand(
+                        button.dataset.richCommand,
+                        false
+                    );
+                }
+            );
+        });
+
+    $("templateVariableSelect")
+        ?.addEventListener(
+            "change",
+            updateTemplatePlaceholderDisplay
+        );
+
+    $("copyTemplatePlaceholderBtn")
+        ?.addEventListener(
+            "click",
+            copySelectedTemplatePlaceholder
         );
 
     $("reviewBtn")
@@ -1893,6 +2397,19 @@ function renderReviewResults(
                         <div><strong>Due On:</strong> ${result.dueOnFormatted || "N/A"}</div>
                     `;
 
+            const showEmailAction =
+                ASA_MODE &&
+                asaSettings.enabled &&
+                asaSettings.emailTemplateEnabled &&
+                Boolean(
+                    asaSettings.emailTemplateHtml
+                        .replace(
+                            /<[^>]*>/g,
+                            ""
+                        )
+                        .trim()
+                );
+
             card.innerHTML = `
                 <div class="review-card-header">
                     <div class="review-card-title">
@@ -1916,6 +2433,14 @@ function renderReviewResults(
                         >
                             Review Notes
                         </button>
+                        ${showEmailAction
+                            ? `<button
+                                class="btn-secondary send-review-email-btn"
+                                data-id="${result.assessmentId}"
+                            >
+                                Send Email
+                            </button>`
+                            : ""}
                     </div>`}
             `;
 
@@ -1939,7 +2464,250 @@ function renderReviewResults(
             );
         });
 
+    document
+        .querySelectorAll(
+            ".send-review-email-btn"
+        )
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => openReviewEmail(
+                    button.dataset.id
+                )
+            );
+        });
+
     updateResultActionVisibility();
+}
+
+function replaceTemplatePlaceholders(
+    template,
+    review
+) {
+
+    const replacements = {
+        "{{ASSET_NAME}}":
+            escapeTemplateHtmlValue(
+                review.assetName
+            ),
+        "{{ASSET_ID}}":
+            escapeTemplateHtmlValue(
+                review.assetId
+            ),
+        "{{DUE_DATE}}":
+            escapeTemplateHtmlValue(
+                review.dueOnFormatted
+            ),
+        "{{LAST_SURVEY_COMPLETED_ON}}":
+            escapeTemplateHtmlValue(
+                review.surveyCompletedOnFormatted
+            ),
+        "{{INCOMPLETE_ASSESSMENT_ID}}":
+            escapeTemplateHtmlValue(
+                review.incompleteAssessmentId
+            )
+    };
+
+    return Object.entries(
+        replacements
+    ).reduce(
+        (
+            resolved,
+            [
+                placeholder,
+                value
+            ]
+        ) =>
+            resolved.split(
+                placeholder
+            ).join(
+                String(value)
+            ),
+        String(template || "")
+    );
+}
+
+function escapeTemplateHtmlValue(
+    value
+) {
+
+    return String(
+        value ?? ""
+    )
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#39;"
+        );
+}
+
+function richTextToPlainText(
+    html
+) {
+
+    const container =
+        document.createElement(
+            "div"
+        );
+
+    container.innerHTML =
+        sanitizeRichText(
+            html
+        );
+
+    container
+        .querySelectorAll(
+            "br"
+        )
+        .forEach(element =>
+            element.replaceWith(
+                "\n"
+            )
+        );
+
+    container
+        .querySelectorAll(
+            "li"
+        )
+        .forEach(element => {
+
+            element.prepend(
+                "• "
+            );
+
+            element.append(
+                "\n"
+            );
+        });
+
+    container
+        .querySelectorAll(
+            "p, div"
+        )
+        .forEach(element =>
+            element.append(
+                "\n"
+            )
+        );
+
+    return (
+        container.textContent || ""
+    )
+        .replace(
+            /\n{3,}/g,
+            "\n\n"
+        )
+        .trim();
+}
+
+function validReviewRecipientEmails(
+    review
+) {
+
+    const allowedRoles =
+        new Set([
+            "ApplicationManager",
+            "BusinessSystemManager"
+        ]);
+
+    return [
+        ...new Set(
+            (review.contacts || [])
+                .filter(contact =>
+                    allowedRoles.has(
+                        contact.roleName
+                    )
+                )
+                .map(contact =>
+                    String(
+                        contact.email || ""
+                    ).trim()
+                )
+                .filter(email =>
+                    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                        email
+                    )
+                )
+        )
+    ];
+}
+
+async function openReviewEmail(
+    assessmentId
+) {
+
+    const review =
+        reviewResults.find(
+            result =>
+                String(result.assessmentId) ===
+                String(assessmentId)
+        );
+
+    if (!review) {
+
+        return;
+    }
+
+    const recipients =
+        validReviewRecipientEmails(
+            review
+        );
+
+    if (recipients.length === 0) {
+
+        window.alert(
+            "No valid Application Manager or Business System Manager email address was found for this assessment."
+        );
+
+        return;
+    }
+
+    const resolvedHtml =
+        replaceTemplatePlaceholders(
+            asaSettings.emailTemplateHtml,
+            review
+        );
+
+    const body =
+        richTextToPlainText(
+            resolvedHtml
+        );
+
+    const subject =
+        `${review.assetName || "Assessment"} Risk Profiler Review`;
+
+    const emailUrl =
+        `mailto:${recipients.map(
+            address =>
+                encodeURIComponent(
+                    address
+                )
+        ).join(",")}?subject=${encodeURIComponent(
+            subject
+        )}&body=${encodeURIComponent(
+            body
+        )}`;
+
+    await chrome.tabs.create({
+        url:
+            emailUrl
+    });
 }
 
 async function downloadActiveReviewNotes() {
