@@ -78,11 +78,16 @@ let surveyDiffRequestId = 0;
 
 let selectedReviewMode = REVIEW_MODES.INITIAL;
 
+const DEFAULT_EMAIL_SUBJECT_TEMPLATE =
+    "{{ASSET_NAME}} Risk Profiler Review";
+
 let asaSettings = {
     enabled:
         false,
     emailTemplateEnabled:
         false,
+    emailTemplateSubject:
+        DEFAULT_EMAIL_SUBJECT_TEMPLATE,
     emailTemplateHtml:
         ""
 };
@@ -214,6 +219,12 @@ async function loadAsaSettings() {
             value.enabled === true,
         emailTemplateEnabled:
             value.emailTemplateEnabled === true,
+        emailTemplateSubject:
+            typeof value.emailTemplateSubject === "string"
+                ? normalizeEmailSubjectTemplate(
+                    value.emailTemplateSubject
+                )
+                : DEFAULT_EMAIL_SUBJECT_TEMPLATE,
         emailTemplateHtml:
             typeof value.emailTemplateHtml === "string"
                 ? sanitizeRichText(
@@ -241,6 +252,9 @@ function renderAsaSettings() {
     const editor =
         $("emailTemplateEditor");
 
+    const subject =
+        $("emailTemplateSubject");
+
     if (asaToggle) {
 
         asaToggle.checked =
@@ -251,6 +265,15 @@ function renderAsaSettings() {
 
         emailToggle.checked =
             asaSettings.emailTemplateEnabled;
+    }
+
+    if (
+        subject &&
+        subject.value !== asaSettings.emailTemplateSubject
+    ) {
+
+        subject.value =
+            asaSettings.emailTemplateSubject;
     }
 
     if (
@@ -288,11 +311,27 @@ function readAsaSettingsFromUi() {
             $("asaModeToggle")?.checked === true,
         emailTemplateEnabled:
             $("emailTemplateToggle")?.checked === true,
+        emailTemplateSubject:
+            normalizeEmailSubjectTemplate(
+                $("emailTemplateSubject")?.value || ""
+            ),
         emailTemplateHtml:
             sanitizeRichText(
                 $("emailTemplateEditor")?.innerHTML || ""
             )
     };
+}
+
+function normalizeEmailSubjectTemplate(
+    subject
+) {
+
+    return String(subject || "")
+        .replace(
+            /[\r\n\t]+/g,
+            " "
+        )
+        .trim();
 }
 
 function sanitizeRichText(
@@ -309,17 +348,66 @@ function sanitizeRichText(
 
     const allowed =
         new Set([
+            "A",
+            "ADDRESS",
             "B",
+            "BLOCKQUOTE",
+            "CENTER",
+            "CODE",
+            "DEL",
             "STRONG",
             "I",
             "EM",
+            "FONT",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "H5",
+            "H6",
+            "HR",
+            "IMG",
+            "INS",
+            "MARK",
+            "PRE",
+            "S",
+            "SMALL",
+            "SPAN",
+            "STRIKE",
+            "SUB",
+            "SUP",
             "U",
             "BR",
             "DIV",
             "P",
             "UL",
             "OL",
-            "LI"
+            "LI",
+            "TABLE",
+            "TBODY",
+            "TD",
+            "TFOOT",
+            "TH",
+            "THEAD",
+            "TR"
+        ]);
+
+    const discardWithContent =
+        new Set([
+            "APPLET",
+            "AUDIO",
+            "BASE",
+            "EMBED",
+            "FORM",
+            "IFRAME",
+            "LINK",
+            "META",
+            "OBJECT",
+            "SCRIPT",
+            "STYLE",
+            "SVG",
+            "TEMPLATE",
+            "VIDEO"
         ]);
 
     [
@@ -330,23 +418,376 @@ function sanitizeRichText(
 
         if (!allowed.has(element.tagName)) {
 
-            element.replaceWith(
-                ...element.childNodes
-            );
+            if (discardWithContent.has(element.tagName)) {
+
+                element.remove();
+
+            } else {
+
+                element.replaceWith(
+                    ...element.childNodes
+                );
+            }
 
             return;
         }
 
         [
             ...element.attributes
-        ].forEach(attribute =>
-            element.removeAttribute(
-                attribute.name
-            )
-        );
+        ].forEach(attribute => {
+
+            const name =
+                attribute.name.toLowerCase();
+
+            if (name === "style") {
+
+                sanitizeEmailInlineStyle(
+                    element
+                );
+
+                return;
+            }
+
+            if (!isAllowedEmailAttribute(
+                element,
+                name,
+                attribute.value
+            )) {
+
+                element.removeAttribute(
+                    attribute.name
+                );
+            }
+        });
+
+        if (
+            element.tagName === "A" &&
+            element.getAttribute("target") === "_blank"
+        ) {
+
+            element.setAttribute(
+                "rel",
+                "noopener noreferrer"
+            );
+        }
     });
 
     return template.innerHTML;
+}
+
+const SAFE_EMAIL_STYLE_PROPERTIES =
+    /^(?:background(?:-color)?|border(?:-(?:top|right|bottom|left))?(?:-(?:color|style|width|radius))?|border-collapse|border-spacing|box-sizing|color|display|float|font(?:-(?:family|size|style|variant|weight))?|height|letter-spacing|line-height|list-style(?:-(?:position|type))?|margin(?:-(?:top|right|bottom|left))?|max-height|max-width|min-height|min-width|object-fit|overflow-wrap|padding(?:-(?:top|right|bottom|left))?|table-layout|text-align|text-decoration(?:-line)?|text-indent|text-transform|vertical-align|white-space|width|word-break|word-spacing)$/;
+
+function sanitizeEmailInlineStyle(
+    element
+) {
+
+    const declarations =
+        [...element.style];
+
+    declarations.forEach(property => {
+
+        const value =
+            element.style.getPropertyValue(
+                property
+            );
+
+        if (
+            !SAFE_EMAIL_STYLE_PROPERTIES.test(
+                property.toLowerCase()
+            ) ||
+            /(?:expression\s*\(|url\s*\(|@import|behavior\s*:|-moz-binding)/i.test(
+                value
+            )
+        ) {
+
+            element.style.removeProperty(
+                property
+            );
+        }
+    });
+
+    if (!element.style.length) {
+
+        element.removeAttribute(
+            "style"
+        );
+    }
+}
+
+function isAllowedEmailAttribute(
+    element,
+    name,
+    value
+) {
+
+    if (
+        name.startsWith("on") ||
+        name === "srcset"
+    ) {
+
+        return false;
+    }
+
+    if ([
+        "dir",
+        "lang",
+        "title"
+    ].includes(name)) {
+
+        return true;
+    }
+
+    const tag =
+        element.tagName;
+
+    if (
+        tag === "IMG" &&
+        [
+            "alt",
+            "height",
+            "width"
+        ].includes(name)
+    ) {
+
+        return true;
+    }
+
+    if (
+        tag === "IMG" &&
+        name === "src"
+    ) {
+
+        return isSafeEmailImageSource(
+            value
+        );
+    }
+
+    if (
+        tag === "A" &&
+        name === "href"
+    ) {
+
+        return /^(?:https?:|mailto:|tel:)/i.test(
+            String(value || "").trim()
+        );
+    }
+
+    if (
+        tag === "A" &&
+        name === "target"
+    ) {
+
+        return [
+            "_blank",
+            "_self"
+        ].includes(value);
+    }
+
+    if (
+        tag === "A" &&
+        name === "rel"
+    ) {
+
+        return true;
+    }
+
+    const tableAttributes = {
+        TABLE:
+            new Set([
+                "align",
+                "bgcolor",
+                "border",
+                "cellpadding",
+                "cellspacing",
+                "height",
+                "width"
+            ]),
+        TD:
+            new Set([
+                "align",
+                "bgcolor",
+                "colspan",
+                "height",
+                "rowspan",
+                "valign",
+                "width"
+            ]),
+        TH:
+            new Set([
+                "align",
+                "bgcolor",
+                "colspan",
+                "height",
+                "rowspan",
+                "scope",
+                "valign",
+                "width"
+            ]),
+        TR:
+            new Set([
+                "align",
+                "bgcolor",
+                "height",
+                "valign"
+            ]),
+        FONT:
+            new Set([
+                "color",
+                "face",
+                "size"
+            ])
+    };
+
+    return tableAttributes[tag]?.has(
+        name
+    ) === true;
+}
+
+function isSafeEmailImageSource(
+    source
+) {
+
+    const value =
+        String(source || "").trim();
+
+    return (
+        /^https?:\/\//i.test(value) ||
+        /^cid:[^\s<>]+$/i.test(value) ||
+        /^data:image\/(?:avif|bmp|gif|jpe?g|png|webp|x-icon|x-png);base64,/i.test(
+            value
+        )
+    );
+}
+
+function fileToDataUrl(
+    file
+) {
+
+    return new Promise((resolve, reject) => {
+
+        const reader =
+            new FileReader();
+
+        reader.addEventListener(
+            "load",
+            () => resolve(
+                String(reader.result || "")
+            )
+        );
+
+        reader.addEventListener(
+            "error",
+            () => reject(
+                reader.error ||
+                new Error("Unable to read the pasted image.")
+            )
+        );
+
+        reader.readAsDataURL(
+            file
+        );
+    });
+}
+
+async function preserveRichEmailPaste(
+    event
+) {
+
+    const clipboard =
+        event.clipboardData;
+
+    if (!clipboard) {
+
+        return;
+    }
+
+    const html =
+        clipboard.getData("text/html");
+
+    const imageFiles =
+        [...clipboard.items]
+            .filter(item =>
+                item.kind === "file" &&
+                item.type.startsWith("image/")
+            )
+            .map(item => item.getAsFile())
+            .filter(Boolean);
+
+    if (!html && imageFiles.length === 0) {
+
+        return;
+    }
+
+    const editor =
+        event.currentTarget;
+
+    const selection =
+        window.getSelection();
+
+    const pasteRange =
+        selection?.rangeCount &&
+        editor?.contains(
+            selection.getRangeAt(0).commonAncestorContainer
+        )
+            ? selection.getRangeAt(0).cloneRange()
+            : null;
+
+    event.preventDefault();
+
+    const imageDataUrls =
+        await Promise.all(
+            imageFiles.map(
+                fileToDataUrl
+            )
+        );
+
+    const pasted =
+        document.createElement(
+            "template"
+        );
+
+    pasted.innerHTML =
+        html || imageDataUrls.map(
+            source =>
+                `<img src="${source}" alt="Pasted image">`
+        ).join("");
+
+    let replacementIndex = 0;
+
+    pasted.content
+        .querySelectorAll("img")
+        .forEach(image => {
+
+            if (
+                !isSafeEmailImageSource(
+                    image.getAttribute("src")
+                ) &&
+                imageDataUrls[replacementIndex]
+            ) {
+
+                image.setAttribute(
+                    "src",
+                    imageDataUrls[replacementIndex++]
+                );
+            }
+        });
+
+    if (pasteRange && selection) {
+
+        selection.removeAllRanges();
+        selection.addRange(
+            pasteRange
+        );
+    }
+
+    document.execCommand(
+        "insertHTML",
+        false,
+        sanitizeRichText(
+            pasted.innerHTML
+        )
+    );
 }
 
 function updateTemplatePlaceholderDisplay() {
@@ -916,6 +1357,22 @@ function attachEvents() {
                 }
             );
         });
+
+    $("emailTemplateEditor")
+        ?.addEventListener(
+            "paste",
+            event => {
+
+                preserveRichEmailPaste(
+                    event
+                ).catch(() => {
+
+                    window.alert(
+                        "The pasted image could not be added to the email template."
+                    );
+                });
+            }
+        );
 
     $("templateVariableSelect")
         ?.addEventListener(
@@ -2483,29 +2940,56 @@ function renderReviewResults(
 
 function replaceTemplatePlaceholders(
     template,
-    review
+    review,
+    {
+        escapeHtml =
+            true
+    } = {}
 ) {
+
+    const activeSurveyTemplateId =
+        review.surveyTemplateId ||
+        (
+            review.status === "Incomplete"
+                ? review.newSurveyTemplateId ||
+                    review.reviewBasis?.newSurveyTemplateId
+                : review.oldSurveyTemplateId ||
+                    review.reviewBasis?.oldSurveyTemplateId
+        ) ||
+        "";
+
+    const templateValue =
+        value =>
+            escapeHtml
+                ? escapeTemplateHtmlValue(
+                    value
+                )
+                : String(value ?? "");
 
     const replacements = {
         "{{ASSET_NAME}}":
-            escapeTemplateHtmlValue(
+            templateValue(
                 review.assetName
             ),
         "{{ASSET_ID}}":
-            escapeTemplateHtmlValue(
+            templateValue(
                 review.assetId
             ),
         "{{DUE_DATE}}":
-            escapeTemplateHtmlValue(
+            templateValue(
                 review.dueOnFormatted
             ),
         "{{LAST_SURVEY_COMPLETED_ON}}":
-            escapeTemplateHtmlValue(
+            templateValue(
                 review.surveyCompletedOnFormatted
             ),
         "{{INCOMPLETE_ASSESSMENT_ID}}":
-            escapeTemplateHtmlValue(
+            templateValue(
                 review.incompleteAssessmentId
+            ),
+        "{{SURVEY_TEMPLATE_ID}}":
+            templateValue(
+                activeSurveyTemplateId
             )
     };
 
@@ -2690,6 +3174,17 @@ async function openReviewEmail(
         );
 
     const subject =
+        normalizeEmailSubjectTemplate(
+            replaceTemplatePlaceholders(
+                asaSettings.emailTemplateSubject ||
+                    DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+                review,
+                {
+                    escapeHtml:
+                        false
+                }
+            )
+        ) ||
         `${review.assetName || "Assessment"} Risk Profiler Review`;
 
     const emailUrl =

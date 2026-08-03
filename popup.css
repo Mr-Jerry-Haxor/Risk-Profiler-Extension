@@ -1564,6 +1564,23 @@ summary {
     pointer-events: none;
 }
 
+.rich-text-editor img {
+
+    max-width: 100%;
+
+    height: auto;
+}
+
+.rich-text-editor table {
+
+    max-width: 100%;
+}
+
+.email-template-subject {
+
+    margin-bottom: 0;
+}
+
 .template-variable-row {
 
     display: grid;

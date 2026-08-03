@@ -681,6 +681,15 @@
                             </label>
                         </div>
                         <div id="emailTemplateEditorSection" class="email-template-editor-section hidden">
+                            <label class="field-label" for="emailTemplateSubject">
+                                Email subject
+                                <input id="emailTemplateSubject"
+                                       class="input email-template-subject"
+                                       type="text"
+                                       maxlength="300"
+                                       value="{{ASSET_NAME}} Risk Profiler Review"
+                                       placeholder="Enter a dynamic email subject">
+                            </label>
                             <label class="field-label" for="emailTemplateEditor">
                                 Email body
                             </label>
@@ -697,10 +706,10 @@
                                  contenteditable="true"
                                  role="textbox"
                                  aria-multiline="true"
-                                 data-placeholder="Write and format the email template here..."></div>
+                                 data-placeholder="Write or paste a formatted email template here, including images..."></div>
                             <div class="template-variable-row">
                                 <label class="field-label" for="templateVariableSelect">
-                                    Template variable
+                                    Template variable for subject or body
                                 </label>
                                 <select id="templateVariableSelect" class="input">
                                     <option value="">Select a variable</option>
@@ -709,6 +718,7 @@
                                     <option value="{{DUE_DATE}}">Due Date</option>
                                     <option value="{{LAST_SURVEY_COMPLETED_ON}}">Last Survey Completed On</option>
                                     <option value="{{INCOMPLETE_ASSESSMENT_ID}}">Incomplete Assessment ID</option>
+                                    <option value="{{SURVEY_TEMPLATE_ID}}">Survey Template ID</option>
                                 </select>
                                 <div id="templatePlaceholderDisplay"
                                      class="template-placeholder-display"

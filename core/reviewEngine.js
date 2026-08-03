@@ -2176,6 +2176,10 @@ async function buildReviewResult(
             oldContext.surveyTemplateId,
         newSurveyTemplateId:
             newContext.surveyTemplateId,
+        surveyTemplateId:
+            status === "Incomplete"
+                ? newContext.surveyTemplateId
+                : oldContext.surveyTemplateId,
         oldReferenceTemplate:
             findTemplateById(
                 surveyTemplates,
