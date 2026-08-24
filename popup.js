@@ -2735,18 +2735,6 @@ function renderResults(
 
                         <div class="checkpoint-results-header">
                             <span>Checkpoint Details</span>
-                            <button
-                                class="download-context download-context-btn"
-                                data-id="${result.assessmentId}"
-                                title="Download Context"
-                                aria-label="Download Context"
-                            >
-                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                            </button>
                         </div>
 
                         ${result.results.map(
@@ -2785,23 +2773,6 @@ function renderResults(
             );
         }
     );
-
-    document
-        .querySelectorAll(
-            ".download-context"
-        )
-        .forEach(btn => {
-
-            btn.addEventListener(
-                "click",
-                () => {
-
-                    downloadContext(
-                        btn.dataset.id
-                    );
-                }
-            );
-        });
 
     updateResultActionVisibility();
 }
@@ -3168,7 +3139,7 @@ async function openReviewEmail(
             review
         );
 
-    const body =
+    const plainText =
         richTextToPlainText(
             resolvedHtml
         );
@@ -3187,6 +3158,23 @@ async function openReviewEmail(
         ) ||
         `${review.assetName || "Assessment"} Risk Profiler Review`;
 
+    try {
+
+        await copyRichEmailToClipboard(
+            resolvedHtml,
+            plainText
+        );
+
+    } catch (error) {
+
+        window.alert(
+            error?.message ||
+            "The formatted email could not be copied to the clipboard."
+        );
+
+        return;
+    }
+
     const emailUrl =
         `mailto:${recipients.map(
             address =>
@@ -3195,14 +3183,87 @@ async function openReviewEmail(
                 )
         ).join(",")}?subject=${encodeURIComponent(
             subject
-        )}&body=${encodeURIComponent(
-            body
         )}`;
+
+    window.alert(
+        "The fully formatted email body has been copied. Paste it into the email draft."
+    );
 
     await chrome.tabs.create({
         url:
             emailUrl
     });
+}
+
+async function copyRichEmailToClipboard(
+    html,
+    plainText
+) {
+
+    const textHtml =
+        String(html || "");
+
+    const textPlain =
+        String(plainText || "");
+
+    if (
+        navigator.clipboard?.write &&
+        typeof ClipboardItem !== "undefined"
+    ) {
+
+        await navigator.clipboard.write([
+            new ClipboardItem({
+                "text/html":
+                    new Blob(
+                        [textHtml],
+                        {
+                            type:
+                                "text/html"
+                        }
+                    ),
+                "text/plain":
+                    new Blob(
+                        [textPlain],
+                        {
+                            type:
+                                "text/plain"
+                        }
+                    )
+            })
+        ]);
+
+        return;
+    }
+
+    const handler =
+        event => {
+
+            event.preventDefault();
+            event.clipboardData.setData(
+                "text/html",
+                textHtml
+            );
+            event.clipboardData.setData(
+                "text/plain",
+                textPlain
+            );
+        };
+
+    document.addEventListener(
+        "copy",
+        handler,
+        {
+            once:
+                true
+        }
+    );
+
+    if (!document.execCommand("copy")) {
+
+        throw new Error(
+            "The formatted email could not be copied to the clipboard."
+        );
+    }
 }
 
 async function downloadActiveReviewNotes() {
