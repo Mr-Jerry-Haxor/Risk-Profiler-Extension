@@ -3181,7 +3181,7 @@ async function openReviewEmail(
                 encodeURIComponent(
                     address
                 )
-        ).join(",")}?subject=${encodeURIComponent(
+        ).join(";")}?subject=${encodeURIComponent(
             subject
         )}`;
 
