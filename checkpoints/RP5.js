@@ -45,6 +45,7 @@ const RP5 = {
                 context,
                 "CSIR-Data",
                 [
+                    "Personally Identifiable Information / Personal Information (IPSM 2.2.9)",
                     "Personally Identifiable Information",
                     "Personal Information",
                     "IPSM 2.2.9"
@@ -55,7 +56,7 @@ const RP5 = {
 
             return pass(
                 this.id,
-                "MFA is applicable and CSIR-Data includes Personally Identifiable Information / Personal Information."
+                "MFA is applicable and CSIR-Data includes Personally Identifiable Information / Personal Information (IPSM 2.2.9)."
             );
         }
 

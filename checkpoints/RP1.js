@@ -58,7 +58,7 @@ const RP1 = {
 
             return fail(
                 this.id,
-                `Expected at least 2 voteCode values, found ${votes.length}.`
+                `Expected AM and BSM approvals, found ${votes.length} only provided approval.`
             );
         }
 
@@ -79,11 +79,11 @@ const RP1 = {
         return approved
             ? pass(
                 this.id,
-                `Matched assessmentId ${assessmentId}; both approval voteCode values are A.`
+                `Matched assessmentId ${assessmentId}; Both AM and BSM provided approvals.`
             )
             : fail(
                 this.id,
-                `Matched assessmentId ${assessmentId}, but approval voteCode values are: ${firstTwoVotes.join(", ")}.`
+                `Matched assessmentId ${assessmentId}; Both AM and BSM not provided approvals.`
             );
     }
 };
