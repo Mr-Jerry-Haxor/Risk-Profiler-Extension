@@ -1670,10 +1670,6 @@ function applyFilters() {
             $("searchInput")
                 ?.value || "",
 
-        regexMode:
-            $("regexMode")
-                ?.checked || false,
-
         fromDate:
             $("fromDate")
                 ?.value || "",
@@ -1728,8 +1724,6 @@ function applyFilters() {
 function clearFilters() {
 
     $("searchInput").value = "";
-
-    $("regexMode").checked = false;
 
     $("fromDate").value = "";
 
@@ -2738,9 +2732,24 @@ function renderResults(
                         </div>
 
                         ${result.results.map(
-                            rule => `
+                            rule => {
 
-                            <div${rule.reason === "Question identifier was not found in the survey questions." ? ' class="rule-error-missing"' : ""}>
+                                const statusValue = String(rule.status || "").trim();
+                                const normalizedStatus = statusValue.toLowerCase();
+                                const rowStateClass = normalizedStatus === "n/a" || normalizedStatus === "na"
+                                    ? "checkpoint-row-na"
+                                    : normalizedStatus === "pass"
+                                        ? "checkpoint-row-pass"
+                                        : normalizedStatus === "fail"
+                                            ? "checkpoint-row-fail"
+                                            : "";
+
+                                const errorClass = rule.reason === "Question identifier was not found in the survey questions." ? "rule-error-missing" : "";
+                                const cssClass = [rowStateClass, errorClass].filter(Boolean).join(" ");
+
+                                return `
+
+                            <div class="${cssClass}">
 
                                 <strong>
                                     ${rule.id}
@@ -2759,7 +2768,8 @@ function renderResults(
                             </div>
 
                             <hr>
-                        `
+                        `;
+                            }
                         ).join("")}
 
                     </div>

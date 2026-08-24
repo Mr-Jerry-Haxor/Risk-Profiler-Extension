@@ -11,45 +11,46 @@ export function filterAssessments(
         filters.search.trim()
     ) {
 
-        if (
-            filters.regexMode
-        ) {
+        const text =
+            filters.search.trim();
 
-            try {
+        const literal =
+            text.toLowerCase();
 
-                const regex =
-                    new RegExp(
-                        filters.search,
-                        "i"
-                    );
+        results =
+            results.filter(
+                item => {
 
-                results =
-                    results.filter(
-                        item =>
-                            regex.test(
-                                item.assetName || ""
-                            )
-                    );
+                    const assetName =
+                        String(item.assetName || "");
 
-            } catch {
-
-                return [];
-            }
-
-        } else {
-
-            const text =
-                filters.search
-                    .toLowerCase();
-
-            results =
-                results.filter(
-                    item =>
-                        (item.assetName || "")
+                    if (
+                        assetName
                             .toLowerCase()
-                            .includes(text)
-                );
-        }
+                            .includes(literal)
+                    ) {
+
+                        return true;
+                    }
+
+                    try {
+
+                        const regex =
+                            new RegExp(
+                                text,
+                                "i"
+                            );
+
+                        return regex.test(
+                            assetName
+                        );
+
+                    } catch {
+
+                        return false;
+                    }
+                }
+            );
     }
 
     if (

@@ -1025,12 +1025,33 @@ summary {
     transform: translateY(0);
 }
 
+.checkpoint-row-na {
+    background-color: #f3f4f6;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.checkpoint-row-pass {
+    background-color: #e8f5e9;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.checkpoint-row-fail {
+    background-color: #fdecea;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
 .rule-error-missing {
     background-color: #f8d7da;
     color: #842029;
-    padding: 6px;
-    border-radius: 4px;
-    margin-bottom: 4px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
 }
 
 .score-error-indicator {
