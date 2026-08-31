@@ -667,13 +667,10 @@ export async function getQuestionSummary(
         );
     }
 
-    const cairoOrigin =
-        new URL(
-            URLS.PRIMARY_ASSESSMENTS
-        ).origin;
-
     const url =
-        `${cairoOrigin}/api/assessment/survey/${assessmentId}/question/${surveyTemplateQuestionId}`;
+        URLS.SURVEY_QUESTION_DETAIL
+            .replace("{assessmentId}", assessmentId)
+            .replace("{surveyTemplateQuestionId}", surveyTemplateQuestionId);
 
     return fetchJson(url);
 }

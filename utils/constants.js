@@ -1,6 +1,6 @@
 export const CONFIG = {
 
-    VERSION: "1.0.0",
+    VERSION: "1.1.0",
 
     MAX_CONCURRENT_VALIDATIONS: 5,
 
@@ -50,7 +50,7 @@ export const REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD = 0.8;
 export const URLS = {
 
     PRIMARY_ASSESSMENTS:
-        "https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35",
+        "https://cairois.web.boeing.com/node-api/assets/4/82/assessment/type/35",
 
     ASSESSMENT_DETAIL:
         "https://cairois.web.boeing.com/api/assessment/{id}/detail",
@@ -62,16 +62,19 @@ export const URLS = {
         "https://cairois.web.boeing.com/api/assessment/{id}/contacts",
 
     SURVEY_TEMPLATE_QUESTIONS:
-        "https://cairois.web.boeing.com/api/survey/template/{id}/questions",
+        "https://cairois.web.boeing.com/node-api/survey/template/{id}/questions",
         
     SURVEY_TEMPLATE_DETAIL:
         "https://cairois.web.boeing.com/api/surveyTemplate/{id}",
+
+    SURVEY_QUESTION_DETAIL:
+        "https://cairois.web.boeing.com/node-api/survey/collector/{assessmentId}/question/{surveyTemplateQuestionId}",
 
     SURVEY_TEMPLATES_RP_APP:
         "https://cairois.web.boeing.com/api/surveyTemplate?where=alternateSurveyTemplateId:=:rp-app",
 
     REVIEW_SUMMARY:
-        "https://cairois.web.boeing.com/api/asset/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6",
+        "https://cairois.web.boeing.com/node-api/assets/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6",
 
     ESATS_VERSIONS:
         "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId={assetId}",

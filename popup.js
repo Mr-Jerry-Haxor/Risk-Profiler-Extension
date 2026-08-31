@@ -995,6 +995,57 @@ async function savePluginLayoutSetting() {
     }
 }
 
+async function handleClearResetPlugin() {
+
+    const confirmed =
+        window.confirm(
+            "Are you sure you want to clear all local data and reset the plugin to its initial state? This action cannot be undone."
+        );
+
+    if (!confirmed) {
+
+        return;
+    }
+
+    const clearButton =
+        $("clearResetPluginBtn");
+
+    const status =
+        $("layoutSettingsStatus");
+
+    if (!clearButton || !status) {
+
+        return;
+    }
+
+    clearButton.disabled = true;
+    status.textContent =
+        "Clearing plugin data…";
+
+    try {
+
+        await chrome.storage.local.clear();
+
+        status.textContent =
+            "Plugin cleared. Reloading…";
+
+        window.setTimeout(
+            () => {
+
+                window.location.reload();
+            },
+            1000
+        );
+
+    } catch (error) {
+
+        status.textContent =
+            "Error clearing plugin: " + error.message;
+
+        clearButton.disabled = false;
+    }
+}
+
 function populateOwnerFilter() {
 
     applicationManagers =
@@ -1311,6 +1362,12 @@ function attachEvents() {
         ?.addEventListener(
             "click",
             savePluginLayoutSetting
+        );
+
+    $("clearResetPluginBtn")
+        ?.addEventListener(
+            "click",
+            handleClearResetPlugin
         );
 
     $("asaModeToggle")

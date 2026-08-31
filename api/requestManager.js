@@ -14,6 +14,31 @@ const DEFAULT_OPTIONS = {
     useCache: true
 };
 
+
+
+function isObject(value) {
+    return value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value);
+}
+
+function unwrapApiResponse(value) {
+    if (
+        isObject(value) &&
+        Object.prototype.hasOwnProperty.call(value, "data") &&
+        (
+            Object.prototype.hasOwnProperty.call(value, "statusCode") ||
+            Object.prototype.hasOwnProperty.call(value, "status") ||
+            Object.prototype.hasOwnProperty.call(value, "success")
+        )
+    ) {
+        return value.data;
+    }
+
+    return value;
+}
+
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -375,7 +400,6 @@ export async function fetchJson(
     url,
     options = {}
 ) {
-
     const config = {
         ...DEFAULT_OPTIONS,
         ...options
@@ -395,51 +419,19 @@ export async function fetchJson(
         attempt <= config.retries;
         attempt++
     ) {
-
         try {
+            let data;
 
             if (
                 isEsatsGatewayUrl(url)
             ) {
-
-                const data =
-                    await fetchFromEsatsPage(
-                        url
-                    );
-
-                if (config.useCache) {
-
-                    memoryCache.set(
-                        url,
-                        data
-                    );
-                }
-
-                return data;
-            }
-
-            if (
+                data = await fetchFromEsatsPage(url);
+            } else if (
                 isGtcApiUrl(url)
             ) {
-
-                const data =
-                    await fetchFromGtcPage(
-                        url
-                    );
-
-                if (config.useCache) {
-
-                    memoryCache.set(
-                        url,
-                        data
-                    );
-                }
-
-                return data;
-            }
-
-            const response =
-                await fetch(url, {
+                data = await fetchFromGtcPage(url);
+            } else {
+                const response = await fetch(url, {
                     credentials:
                         "include",
 
@@ -452,35 +444,34 @@ export async function fetchJson(
                         "no-store"
                 });
 
-            if (!response.ok) {
+                if (!response.ok) {
+                    throw new Error(
+                        `${response.status} ${response.statusText}`
+                    );
+                }
 
-                throw new Error(
-                    `${response.status} ${response.statusText}`
-                );
+                data = await response.json();
             }
 
-            const data =
-                await response.json();
+            const normalizedData =
+                unwrapApiResponse(data);
 
             if (config.useCache) {
-
                 memoryCache.set(
                     url,
-                    data
+                    normalizedData
                 );
             }
 
-            return data;
+            return normalizedData;
 
         } catch (error) {
-
             lastError = error;
 
             if (
                 attempt <
                 config.retries
             ) {
-
                 await sleep(
                     config.retryDelay
                 );

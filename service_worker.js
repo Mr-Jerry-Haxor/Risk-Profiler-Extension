@@ -194,94 +194,50 @@ ASSESSMENT REFRESH
 */
 
 async function refreshAssessments() {
-
     try {
+        await updateStatus("Loading assessments...");
 
-        await updateStatus(
-            "Loading assessments..."
-        );
+        const response = await getAssessmentList();
 
-        const data =
-            await getAssessmentList();
+        const items = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.data)
+                ? response.data
+                : [];
 
-        const normalized =
-            data.map(item => {
+        const normalized = items.map(item => {
+            const assessmentId =
+                item.incompleteAssessmentId ??
+                item.lastAssessmentId;
 
-                const assessmentId =
-                    item.incompleteAssessmentId ??
-                    item.lastAssessmentId;
+            return {
+                assetId: item.assetId,
+                assetName: item.assetName,
+                assessmentId,
+                lastAssessmentId: item.lastAssessmentId,
+                incompleteAssessmentId: item.incompleteAssessmentId,
+                surveyCompletedOn: item.surveyCompletedOn,
+                dueOn: item.dueOn,
+                attestOn: item.attestOn,
+                attestName: item.attestName,
+                attestId: item.attestId,
+                incompleteInitiatedOn: item.incompleteInitiatedOn,
+                incompleteInitiatedById: item.incompleteInitiatedById,
+                incompleteInitiatedByName: item.incompleteInitiatedByName,
+                appMgrName: item.appMgrName,
+                sysOwnerName: item.sysOwnerName,
+                owningBusUnit: item.owningBusUnit,
+                lifeCycle: item.lifeCycle,
+                hasIncomplete: Boolean(item.incompleteAssessmentId),
+                raw: item
+            };
+        });
 
-                return {
-
-                    assetId:
-                        item.assetId,
-
-                    assetName:
-                        item.assetName,
-
-                    assessmentId,
-
-                    lastAssessmentId:
-                        item.lastAssessmentId,
-
-                    incompleteAssessmentId:
-                        item.incompleteAssessmentId,
-
-                    surveyCompletedOn:
-                        item.surveyCompletedOn,
-
-                    dueOn:
-                        item.dueOn,
-
-                    attestOn:
-                        item.attestOn,
-
-                    attestName:
-                        item.attestName,
-
-                    attestId:
-                        item.attestId,
-
-                    incompleteInitiatedOn:
-                        item.incompleteInitiatedOn,
-
-                    incompleteInitiatedById:
-                        item.incompleteInitiatedById,
-
-                    incompleteInitiatedByName:
-                        item.incompleteInitiatedByName,
-
-                    appMgrName:
-                        item.appMgrName,
-
-                    sysOwnerName:
-                        item.sysOwnerName,
-
-                    owningBusUnit:
-                        item.owningBusUnit,
-
-                    lifeCycle:
-                        item.lifeCycle,
-
-                    hasIncomplete:
-                        !!item.incompleteAssessmentId,
-
-                    raw:
-                        item
-                };
-            });
-
-        await saveAssessments(
-            normalized
-        );
+        await saveAssessments(normalized);
 
         await chrome.storage.local.set({
-
-            assessmentCount:
-                normalized.length,
-
-            lastRefresh:
-                Date.now()
+            assessmentCount: normalized.length,
+            lastRefresh: Date.now()
         });
 
         await updateStatus(
@@ -289,14 +245,10 @@ async function refreshAssessments() {
         );
 
         return normalized;
-
     } catch (error) {
-
         console.error(error);
 
-        await updateError(
-            error.message
-        );
+        await updateError(error.message);
 
         throw error;
     }
