@@ -166,7 +166,17 @@ test("interrupted worker state is reported rather than leaving the modal stuck",
 });
 
 class Element {
-    constructor(tag) { this.tagName = tag; this.children = []; this.style = {}; this.listeners = {}; this.className = ""; this.attributes = {}; }
+    constructor(tag) {
+        this.tagName = tag; this.children = []; this.listeners = {}; this.className = ""; this.attributes = {};
+        const priorities = {};
+        this.style = {
+            setProperty(key, value, priority = "") { this[key] = value; priorities[key] = priority; },
+            getPropertyValue(key) { return this[key] || ""; },
+            getPropertyPriority(key) { return priorities[key] || ""; },
+            removeProperty(key) { delete this[key]; delete priorities[key]; }
+        };
+    }
+    contains(element) { return this === element || this.children.some(child => child.contains(element)); }
     set textContent(value) { this.text = value; }
     get textContent() { return this.text || this.children.map(child => child.textContent).join(""); }
     setAttribute(key, value) { this.attributes[key] = value; }
@@ -180,12 +190,24 @@ class Element {
     showModal() { this.open = true; }
 }
 
-async function contentHarness(eligible = true) {
+async function contentHarness(eligible = true, headerWidths = null) {
     const body = new Element("body");
     const outline = new Element("button");
     outline.textContent = "View Survey Outline";
     outline.className = "btn btn-default";
     body.append(outline);
+    let actionsColumn;
+    let titleColumn;
+    if (headerWidths) {
+        const header = new Element("div");
+        actionsColumn = new Element("div");
+        titleColumn = new Element("div");
+        actionsColumn.style.width = headerWidths[0];
+        titleColumn.style.width = headerWidths[1];
+        actionsColumn.append(outline);
+        header.append(titleColumn, actionsColumn);
+        body.append(header);
+    }
     const walk = root => [root, ...root.children.flatMap(walk)];
     const document = {
         body, documentElement: body,
@@ -198,13 +220,39 @@ async function contentHarness(eligible = true) {
     let reconcile;
     const context = vm.createContext({
         document, location, setTimeout() {}, setInterval(callback) { reconcile = callback; },
+        getComputedStyle: element => ({ width: element.style.width || "auto" }),
         MutationObserver: class { observe() {} },
         chrome: { runtime: { getURL: path => `chrome-extension://test/${path}`, async sendMessage(message) { calls.push(message); return message.action === "CAIRO_SURVEY_ELIGIBILITY" ? { success: true, eligible } : { success: true, jobId: "test-job" }; } } }
     });
     vm.runInContext(await readFile(new URL("../content/cairoSurvey.js", import.meta.url), "utf8"), context);
     await flush();
-    return { body, outline, document, calls, location, reconcile };
+    return { body, outline, document, calls, location, reconcile, actionsColumn, titleColumn };
 }
+
+test("survey header swaps 40/60 widths and restores them when navigating away", async () => {
+    for (const original of [["40%", "60%"], ["400px", "600px"]]) {
+        const h = await contentHarness(true, original);
+        assert.equal(h.actionsColumn.style.width, "60%");
+        assert.equal(h.titleColumn.style.width, "40%");
+        await h.reconcile();
+        assert.equal(h.actionsColumn.style.width, "60%");
+        h.location.href = "https://cairois.web.boeing.com/Assets/40326";
+        h.location.pathname = "/Assets/40326";
+        await h.reconcile();
+        assert.equal(h.actionsColumn.style.width, original[0]);
+        assert.equal(h.titleColumn.style.width, original[1]);
+        assert.equal(h.actionsColumn.style.getPropertyPriority("width"), "");
+    }
+});
+
+test("header widths stay unchanged on unsupported surveys or unrelated layouts", async () => {
+    const unsupported = await contentHarness(false, ["40%", "60%"]);
+    assert.equal(unsupported.actionsColumn.style.width, "40%");
+    assert.equal(unsupported.titleColumn.style.width, "60%");
+    const unrelated = await contentHarness(true, ["50%", "50%"]);
+    assert.equal(unrelated.actionsColumn.style.width, "50%");
+    assert.equal(unrelated.titleColumn.style.width, "50%");
+});
 
 test("content injects two buttons immediately before outline without duplication", async () => {
     const h = await contentHarness();

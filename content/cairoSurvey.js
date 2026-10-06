@@ -6,6 +6,45 @@
     let modal = null;
     let trigger = null;
     let scheduled = false;
+    let headerLayout = null;
+
+    function restoreHeaderLayout() {
+        if (!headerLayout) return;
+        for (const { element, width, priority } of headerLayout.columns) {
+            if (width) element.style.setProperty("width", width, priority);
+            else element.style.removeProperty("width");
+        }
+        headerLayout = null;
+    }
+
+    function widenSurveyActions(outline) {
+        if (headerLayout?.actions.contains(outline)) return;
+        restoreHeaderLayout();
+        for (let actions = outline.parentElement; actions?.parentElement; actions = actions.parentElement) {
+            if (actions.tagName.toLowerCase() !== "div") continue;
+            const title = [...actions.parentElement.children].find(element => {
+                if (element === actions || element.tagName.toLowerCase() !== "div") return false;
+                if (actions.style.width === "40%" && element.style.width === "60%") return true;
+                // Also recognize stylesheet-defined widths, which compute to pixels.
+                const actionsWidth = parseFloat(getComputedStyle(actions).width);
+                const titleWidth = parseFloat(getComputedStyle(element).width);
+                return actionsWidth > 0 && titleWidth > 0 &&
+                    Math.abs(actionsWidth / (actionsWidth + titleWidth) - 0.4) < 0.01;
+            });
+            if (!title) continue;
+            headerLayout = {
+                actions,
+                columns: [actions, title].map(element => ({
+                    element,
+                    width: element.style.getPropertyValue("width"),
+                    priority: element.style.getPropertyPriority("width")
+                }))
+            };
+            actions.style.setProperty("width", "60%", "important");
+            title.style.setProperty("width", "40%", "important");
+            return;
+        }
+    }
 
     function closeModal() {
         modal?.remove();
@@ -61,6 +100,7 @@
             (element.textContent || element.value || "").replace(/\s+/g, " ").trim() === "View Survey Outline"
         );
         if (!outline?.parentElement) return;
+        widenSurveyActions(outline);
         let actions = document.getElementById(BUTTONS_ID);
         if (actions?.nextSibling === outline) return;
         if (!actions) {
@@ -84,6 +124,7 @@
         if (checkedUrl !== location.href) {
             eligible = false;
             document.getElementById(BUTTONS_ID)?.remove();
+            restoreHeaderLayout();
             closeModal();
         }
         if (!/^\/Assessments\/[1-9]\d*\/Survey\/[1-9]\d*\/?$/.test(location.pathname)) {
