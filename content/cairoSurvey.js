@@ -79,19 +79,42 @@
         modal.addEventListener("cancel", event => { event.preventDefault(); closeModal(); });
         modal.showModal();
         const currentModal = modal;
-        try {
-            const response = await chrome.runtime.sendMessage({ action: "START_CAIRO_JOB", mode });
-            if (!response?.success) throw new Error(response?.error || "Unable to start the assessment.");
+        let replaceButton = null;
+        async function startRequested(replaceExisting = false) {
             if (modal !== currentModal || location.href !== pageUrl) return;
-            const frame = document.createElement("iframe");
-            frame.title = title.textContent + " results";
-            frame.style.cssText = "display:block;width:100%;height:calc(100% - 56px);border:0;";
-            frame.allow = "clipboard-write";
-            frame.src = chrome.runtime.getURL(`popup.html?view=cairo&job=${encodeURIComponent(response.jobId)}`);
-            status.replaceWith(frame);
-        } catch (error) {
-            status.textContent = error.message || "The extension is unavailable. Reload the Cairo page after reloading the extension.";
+            if (replaceButton) replaceButton.disabled = true;
+            if (replaceExisting) status.textContent = "Cancelling the previous job and clearing its generated data… Starting the current app next.";
+            try {
+                const response = await chrome.runtime.sendMessage({ action: "START_CAIRO_JOB", mode, replaceExisting });
+                if (modal !== currentModal || location.href !== pageUrl) return;
+                if (!response?.success) {
+                    status.textContent = response?.error || "Unable to start the assessment.";
+                    if (response?.code === "JOB_RUNNING" && !replaceButton) {
+                        replaceButton = document.createElement("button");
+                        replaceButton.type = "button";
+                        replaceButton.className = button.className;
+                        replaceButton.textContent = "Cancel and start current app";
+                        replaceButton.title = "Cancel the running job, discard its generated results and cached data, and run this app. Saved settings and ASA notes are preserved.";
+                        replaceButton.style.cssText = "margin:0 16px 16px;";
+                        replaceButton.addEventListener("click", () => startRequested(true));
+                        currentModal.append(replaceButton);
+                    }
+                    return;
+                }
+                replaceButton?.remove();
+                const frame = document.createElement("iframe");
+                frame.title = title.textContent + " results";
+                frame.style.cssText = "display:block;width:100%;height:calc(100% - 56px);border:0;";
+                frame.allow = "clipboard-write";
+                frame.src = chrome.runtime.getURL(`popup.html?view=cairo&job=${encodeURIComponent(response.jobId)}`);
+                status.replaceWith(frame);
+            } catch (error) {
+                status.textContent = error.message || "The extension is unavailable. Reload the Cairo page after reloading the extension.";
+            } finally {
+                if (replaceButton) replaceButton.disabled = false;
+            }
         }
+        await startRequested();
     }
 
     function injectButtons() {

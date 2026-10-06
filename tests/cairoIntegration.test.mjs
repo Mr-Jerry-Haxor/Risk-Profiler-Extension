@@ -72,11 +72,14 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         alarms: { onAlarm: event("alarm"), create() {} }
     };
     const context = vm.createContext({
-        chrome, CONFIG, PREREQUISITE_CHECKS, URL, crypto: webcrypto, console,
+        chrome, CONFIG, PREREQUISITE_CHECKS, URL, AbortController, crypto: webcrypto, console,
         parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment,
         setInterval() {}, setTimeout, sessionReady,
         setRequestRecoveryHandlers() {},
         rememberSiteTab() {},
+        ensureSiteTab: async () => ({ id: 1, status: "complete", url: routeUrl }),
+        probeSiteSession: async () => ({ sessionActive: true }),
+        cancelPendingRequests() {},
         getValue: async key => local.values[key],
         setValue: async (key, value) => local.set({ [key]: value }),
         getAssessmentList: async () => [row],
@@ -93,7 +96,7 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
     });
     vm.runInContext(withoutImports(await readFile(new URL("../service_worker.js", import.meta.url), "utf8")), context);
     const waitForSessions = context.waitForPrerequisiteSessions;
-    vm.runInContext("waitForPrerequisiteSessions = async () => { await sessionReady; };", context);
+    vm.runInContext("waitForPrerequisiteSessions = async () => { await interruptible(sessionReady, jobStopController.signal); };", context);
     const sender = { id: chrome.runtime.id, tab: { id: 1 }, frameId: 0, url: routeUrl };
     const viewSender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") + "?view=cairo&job=test" };
     const send = (message, from = sender) => new Promise(resolve => listeners.message(message, from, resolve));
@@ -131,6 +134,21 @@ test("ESATS readiness probes the asset data endpoint rather than the gateway roo
     assert.equal(probes[0].options.retryUntilAvailable, false);
     assert.equal(probes[0].options.refreshCache, true);
     assert.equal(probes[0].options.retries, 1);
+});
+
+test("session checks use shared tab recovery and session probes for GTC and ESATS without an asset", async () => {
+    const h = await workerHarness();
+    const ensured = [];
+    const probed = [];
+    h.context.ensureSiteTab = async id => { ensured.push(id); return { id: 8, status: "complete" }; };
+    h.context.probeSiteSession = async (id, url) => { probed.push({ id, url }); };
+    for (const id of ["esats", "gtc"]) {
+        const check = PREREQUISITE_CHECKS.find(item => item.id === id);
+        assert.equal((await h.context.checkPrerequisite(check)).passed, true);
+        assert.equal(probed.at(-1).url, id === "esats" ? check.openUrl : check.url);
+    }
+    assert.deepEqual(ensured, ["esats", "gtc"]);
+    assert.deepEqual(probed.map(item => item.id), ["esats", "gtc"]);
 });
 
 test("background start succeeds without a popup and waits for sessions before validation", async () => {
@@ -226,7 +244,7 @@ class Element {
     showModal() { this.open = true; }
 }
 
-async function contentHarness(eligible = true, headerWidths = null) {
+async function contentHarness(eligible = true, headerWidths = null, startResponses = []) {
     const body = new Element("body");
     const outline = new Element("button");
     outline.textContent = "View Survey Outline";
@@ -258,7 +276,7 @@ async function contentHarness(eligible = true, headerWidths = null) {
         document, location, setTimeout() {}, setInterval(callback) { reconcile = callback; },
         getComputedStyle: element => ({ width: element.style.width || "auto" }),
         MutationObserver: class { observe() {} },
-        chrome: { runtime: { getURL: path => `chrome-extension://test/${path}`, async sendMessage(message) { calls.push(message); return message.action === "CAIRO_SURVEY_ELIGIBILITY" ? { success: true, eligible } : { success: true, jobId: "test-job" }; } } }
+        chrome: { runtime: { getURL: path => `chrome-extension://test/${path}`, async sendMessage(message) { calls.push(message); return message.action === "CAIRO_SURVEY_ELIGIBILITY" ? { success: true, eligible } : startResponses.shift() || { success: true, jobId: "test-job" }; } } }
     });
     vm.runInContext(await readFile(new URL("../content/cairoSurvey.js", import.meta.url), "utf8"), context);
     await flush();
@@ -308,6 +326,161 @@ test("content injects two buttons immediately before outline without duplication
     assert.equal(h.body.children.includes(dialog), false);
     assert.equal(h.calls.some(call => call.action.startsWith("STOP")), false);
 });
+
+test("Cairo busy warning offers cancellation and starts the originally requested mode", async () => {
+    for (const [index, mode] of [[0, "validation"], [1, "review"]]) {
+        const h = await contentHarness(true, null, [{ success: false, code: "JOB_RUNNING", error: "Another assessment job is running." }]);
+        const actions = h.document.getElementById("risk-profiler-cairo-actions");
+        actions.children[index].listeners.click({ preventDefault() {} });
+        await flush();
+        const dialog = h.body.children.find(element => element.tagName === "dialog");
+        const replace = dialog.children.find(element => element.textContent === "Cancel and start current app");
+        assert.ok(replace);
+        assert.equal(h.calls.at(-1).replaceExisting, false);
+        await replace.listeners.click();
+        assert.equal(h.calls.at(-1).replaceExisting, true);
+        assert.equal(h.calls.at(-1).mode, mode);
+        assert.match(dialog.children[1].src, /popup.html\?view=cairo&job=test-job$/);
+        assert.equal(dialog.children.includes(replace), false);
+    }
+});
+
+test("ordinary Cairo startup errors do not offer a destructive replacement button", async () => {
+    const h = await contentHarness(true, null, [{ success: false, error: "Unsupported template." }]);
+    h.document.getElementById("risk-profiler-cairo-actions").children[0].listeners.click({ preventDefault() {} });
+    await flush();
+    const dialog = h.body.children.find(element => element.tagName === "dialog");
+    assert.equal(dialog.children.length, 2);
+    assert.equal(dialog.children[1].textContent, "Unsupported template.");
+});
+
+test("replacement stops an old Cairo job, clears its run data, and starts the current app", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    await h.local.set({ asaSettings: { enabled: true }, reviewQuestionNotes: { saved: "keep" }, reviewMode: "selectedAnswers" });
+    const old = await h.send({ action: "START_CAIRO_JOB", mode: "validation" });
+    await flush();
+    await h.local.set({ validationResults: [{ assessmentId: 999 }], validations: ["old"],
+        assessmentContexts: { 999: {} }, failedAssessments: [{ assessmentId: 999 }],
+        reviewResults: ["old"], reviews: ["old"], validationCompletedAt: 1 });
+    const next = { ...row, assetId: "40327", assetName: "Current application", incompleteAssessmentId: 55 };
+    const nextUrl = routeUrl.replace("41559874", "55");
+    h.chrome.tabs.get = async () => ({ id: 1, url: nextUrl });
+    h.context.getAssessmentList = async () => [row, next];
+    let cancelledRequests = 0;
+    h.context.cancelPendingRequests = () => { cancelledRequests++; };
+    const response = await h.send({ action: "START_CAIRO_JOB", mode: "review", replaceExisting: true }, { ...h.sender, url: nextUrl });
+    assert.equal(response.success, true);
+    assert.equal(cancelledRequests, 1);
+    assert.equal(h.session.values[`cairoJob:${old.jobId}`], undefined);
+    assert.equal(h.local.values.validationResults, undefined);
+    assert.equal(h.local.values.validations, undefined);
+    assert.equal(h.local.values.assessmentContexts, undefined);
+    assert.equal(h.local.values.failedAssessments, undefined);
+    assert.equal(h.local.values.validationCompletedAt, undefined);
+    assert.deepEqual(h.local.values.asaSettings, { enabled: true });
+    assert.deepEqual(h.local.values.reviewQuestionNotes, { saved: "keep" });
+    h.releaseSession();
+    await flush();
+    const result = await h.send({ action: "GET_CAIRO_JOB", jobId: response.jobId }, h.viewSender);
+    assert.equal(result.job.state, "complete");
+    assert.equal(result.job.results[0].assessmentId, 55);
+    assert.equal(h.calls.length, 1, "the cancelled validation engine never starts");
+    assert.equal(h.calls[0].mode, "review");
+    assert.equal(h.calls[0].config.mode, "selectedAnswers");
+});
+
+test("replacement can stop a popup job and rejects concurrent replacement clicks", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    assert.equal((await h.send({ action: "START_VALIDATION", assessments: [{ ...row, assessmentId: row.incompleteAssessmentId }] })).success, true);
+    await flush();
+    const busy = await h.send({ action: "START_CAIRO_JOB", mode: "review" });
+    assert.equal(busy.code, "JOB_RUNNING");
+    const [first, second] = await Promise.all([
+        h.send({ action: "START_CAIRO_JOB", mode: "review", replaceExisting: true }),
+        h.send({ action: "START_CAIRO_JOB", mode: "review", replaceExisting: true })
+    ]);
+    assert.equal(first.success, true);
+    assert.equal(second.success, false);
+    assert.equal(second.code, "JOB_RUNNING");
+    h.releaseSession();
+    await flush();
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0].mode, "review");
+});
+
+test("unauthorized replacement cannot cancel or clear an existing job", async () => {
+    const h = await workerHarness();
+    const old = await h.send({ action: "START_CAIRO_JOB", mode: "validation" });
+    await flush();
+    let cancelled = false;
+    h.context.cancelPendingRequests = () => { cancelled = true; };
+    const response = await h.send({ action: "START_CAIRO_JOB", mode: "review", replaceExisting: true }, { ...h.sender, id: "another-extension" });
+    assert.equal(response.success, false);
+    assert.equal(cancelled, false);
+    assert.ok(h.session.values[`cairoJob:${old.jobId}`]);
+    h.releaseSession();
+    await flush();
+});
+
+for (const mode of ["validation", "review"]) {
+    test(`plugin cancel force-stops ${mode} during sign-in, clears run data, and permits a new run`, async () => {
+        const h = await workerHarness();
+        h.context.console = { ...console, error() {} };
+        const assessment = { ...row, assessmentId: row.incompleteAssessmentId };
+        await h.send({ action: mode === "review" ? "START_REVIEW" : "START_VALIDATION", assessments: [assessment] }, h.viewSender);
+        await flush();
+        await h.local.set({ validationResults: ["old"], reviewResults: ["old"], failedAssessments: [assessment],
+            assessmentContexts: { old: {} }, asaSettings: { enabled: true }, reviewQuestionNotes: { saved: "keep" } });
+        await h.session.set({ "cairoJob:old": { state: "running" } });
+        let aborts = 0;
+        h.context.cancelPendingRequests = () => { aborts++; };
+        const action = mode === "review" ? "STOP_REVIEW" : "STOP_VALIDATION";
+        const responses = await Promise.all([h.send({ action }, h.viewSender), h.send({ action }, h.viewSender)]);
+        assert.ok(responses.every(response => response.success));
+        assert.equal(aborts, 1, "duplicate clicks share one force stop");
+        for (const key of ["validationResults", "reviewResults", "validationProgress", "reviewProgress", "failedAssessments", "assessmentContexts", "lastAction"]) {
+            assert.equal(h.local.values[key], undefined, key);
+        }
+        assert.equal(h.session.values["cairoJob:old"], undefined);
+        assert.ok(h.local.values.resultsResetId);
+        assert.deepEqual(h.local.values.asaSettings, { enabled: true });
+        assert.deepEqual(h.local.values.reviewQuestionNotes, { saved: "keep" });
+        assert.equal(h.calls.length, 0, "cancel does not wait for sign-in or start the old engine");
+        assert.equal((await h.send({ action: "START_VALIDATION", assessments: [assessment] }, h.viewSender)).success, true);
+        h.releaseSession();
+        await flush();
+        assert.equal(h.calls.length, 1);
+        assert.equal(h.calls[0].mode, "validation");
+    });
+
+    test(`cancelling an active ${mode} discards its late engine result and progress`, async () => {
+        const h = await workerHarness();
+        h.context.console = { ...console, error() {} };
+        let progressCallback;
+        let finish;
+        const engine = async (...args) => {
+            progressCallback = args[mode === "review" ? 2 : 1];
+            return new Promise(resolve => { finish = resolve; });
+        };
+        h.context[mode === "review" ? "reviewBatch" : "validateBatch"] = engine;
+        h.releaseSession();
+        await h.send({ action: mode === "review" ? "START_REVIEW" : "START_VALIDATION",
+            assessments: [{ ...row, assessmentId: row.incompleteAssessmentId }] }, h.viewSender);
+        await flush();
+        assert.equal(typeof finish, "function");
+        h.context.cancelPendingRequests = () => {
+            progressCallback({ completed: 1, total: 1, current: "late", assessment: row, result: { stale: true } });
+            finish([{ stale: true }]);
+        };
+        assert.equal((await h.send({ action: mode === "review" ? "STOP_REVIEW" : "STOP_VALIDATION" }, h.viewSender)).success, true);
+        await progressCallback({ completed: 1, total: 1, current: "still late" });
+        for (const key of ["validationProgress", "reviewProgress", "validationResults", "reviewResults", "validations", "reviews", "validationError", "reviewError"]) {
+            assert.equal(h.local.values[key], undefined, key);
+        }
+    });
+}
 
 test("unsupported templates do not inject; SPA navigation removes old buttons", async () => {
     const unsupported = await contentHarness(false);
@@ -387,6 +560,19 @@ test("embedded validation only reads its job snapshot and exports those results"
     assert.deepEqual(h.calls.find(call => call.exported).exported, results);
 });
 
+test("email templates support Last Assessment ID independently of the current assessment ID", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    const review = { assessmentId: 41559874, incompleteAssessmentId: 41559874, lastAssessmentId: 26750839 };
+    const template = "Last: {{LAST_ASSESSMENT_ID}}; current: {{INCOMPLETE_ASSESSMENT_ID}}; last again: {{LAST_ASSESSMENT_ID}}";
+    const expected = "Last: 26750839; current: 41559874; last again: 26750839";
+    assert.equal(h.context.replaceTemplatePlaceholders(template, review), expected);
+    assert.equal(h.context.replaceTemplatePlaceholders(template, review, { escapeHtml: false }), expected);
+    assert.equal(h.context.replaceTemplatePlaceholders("Last: {{LAST_ASSESSMENT_ID}}", {}), "Last: ");
+    assert.equal(h.context.replaceTemplatePlaceholders("{{LAST_ASSESSMENT_ID}}", { lastAssessmentId: '<>&"' }), "&lt;&gt;&amp;&quot;");
+    const html = await readFile(new URL("../popup.html", import.meta.url), "utf8");
+    assert.match(html, /<option value="\{\{LAST_ASSESSMENT_ID\}\}">Last Assessment ID<\/option>/);
+});
+
 test("embedded review opens standard notes and wires the configured email action", async () => {
     const results = [{ assessmentId: 41559874, workQueue: [] }];
     const h = await popupHarness({ mode: "review", state: "complete", route, results }, true);
@@ -398,4 +584,70 @@ test("embedded review opens standard notes and wires the configured email action
     const unconfigured = await popupHarness({ mode: "review", state: "complete", route, results });
     assert.equal(unconfigured.get("cairoReviewEmailBtn").disabled, true);
     assert.match(unconfigured.get("cairoReviewEmailBtn").title, /Configure ASA Mode/);
+});
+
+test("plugin cancel clears the UI immediately and prevents a late poll restoring old results", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [{ old: true }] });
+    let resolveStop;
+    let resolvePoll;
+    let poll;
+    let stops = 0;
+    h.context.chrome.runtime.sendMessage = () => { stops++; return new Promise(resolve => { resolveStop = resolve; }); };
+    h.context.chrome.storage = { local: { get: () => new Promise(resolve => { resolvePoll = resolve; }) } };
+    h.context.setInterval = callback => { poll = callback; };
+    vm.runInContext("startProgressPolling()", h.context);
+    const pendingPoll = poll();
+    const pendingStop = vm.runInContext("forceCancelJob('validation')", h.context);
+    await vm.runInContext("forceCancelJob('validation')", h.context);
+    assert.equal(stops, 1);
+    assert.equal(vm.runInContext("validationResults.length + reviewResults.length", h.context), 0);
+    assert.equal(h.get("progressContainer").classList.contains("hidden"), true);
+    assert.equal(h.get("exportBtn").classList.contains("hidden"), true);
+    assert.equal(h.get("progressFill").style.width, "0%");
+    assert.equal(h.get("validateBtn").disabled, true);
+    assert.equal(h.get("reviewBtn").disabled, true);
+    resolvePoll({ validationComplete: true, validationResults: [{ stale: true }] });
+    await pendingPoll;
+    assert.equal(h.calls.some(call => call.validation?.some(row => row.stale)), false);
+    resolveStop({ success: true });
+    await pendingStop;
+    assert.equal(h.get("validateBtn").disabled, false);
+    assert.equal(h.get("reviewBtn").disabled, false);
+});
+
+test("plugin review cancel failures are visible and can be retried", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    h.context.chrome.runtime.sendMessage = async message => {
+        assert.equal(message.action, "STOP_REVIEW");
+        return { success: false, error: "Worker unavailable" };
+    };
+    await vm.runInContext("forceCancelJob('review')", h.context);
+    assert.match(h.get("progressText").textContent, /Cancellation failed: Worker unavailable/);
+    assert.equal(h.get("cancelReviewBtn").classList.contains("hidden"), false);
+    assert.equal(vm.runInContext("cancellationInProgress", h.context), false);
+});
+
+test("a stop from another plugin view clears stale local results on polling", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [{ old: true }] });
+    let poll;
+    h.context.setInterval = callback => { poll = callback; };
+    h.context.chrome.storage = { local: { get: async () => ({ resultsResetId: "new-reset" }) } };
+    vm.runInContext("startProgressPolling()", h.context);
+    await poll();
+    assert.equal(vm.runInContext("validationResults.length + reviewResults.length", h.context), 0);
+    assert.equal(h.get("reviewNotesModal").classList.contains("hidden"), true);
+    assert.equal(h.get("progressContainer").classList.contains("hidden"), true);
+});
+
+test("a newly started run remains visible when polling observes the previous reset marker", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
+    let poll;
+    h.context.setInterval = callback => { poll = callback; };
+    h.context.chrome.storage = { local: { get: async () => ({ resultsResetId: "previous-stop",
+        lastAction: "review", reviewProgress: { completed: 0, total: 1, current: "New app" } }) } };
+    vm.runInContext("startProgressPolling()", h.context);
+    await poll();
+    assert.equal(h.get("progressContainer").classList.contains("hidden"), false);
+    assert.equal(h.get("cancelReviewBtn").classList.contains("hidden"), false);
+    assert.equal(h.get("reviewBtn").disabled, true);
 });

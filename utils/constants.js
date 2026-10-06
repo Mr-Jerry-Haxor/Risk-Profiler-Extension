@@ -52,6 +52,9 @@ export const URLS = {
     PRIMARY_ASSESSMENTS:
         "https://cairois.web.boeing.com/node-api/assets/4/82/assessment/type/35",
 
+    ACP_ASSESSMENTS:
+        "https://cairois.web.boeing.com/node-api/assets/4/82/assessment/type/48",
+
     ASSESSMENT_DETAIL:
         "https://cairois.web.boeing.com/api/assessment/{id}/detail",
 

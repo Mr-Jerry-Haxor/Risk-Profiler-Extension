@@ -60,6 +60,9 @@ let reviewResults = [];
 let resultsRendered = false;
 
 let reviewResultsRendered = false;
+let cancellationInProgress = false;
+let resultsViewGeneration = 0;
+let lastResultsResetId = null;
 
 let activeResultsTab = "validation";
 
@@ -1594,27 +1597,13 @@ function attachEvents() {
     $("cancelBtn")
         ?.addEventListener(
             "click",
-            async () => {
-
-                await chrome.runtime.sendMessage({
-
-                    action:
-                        "STOP_VALIDATION"
-                });
-            }
+            () => forceCancelJob("validation")
         );
 
     $("cancelReviewBtn")
         ?.addEventListener(
             "click",
-            async () => {
-
-                await chrome.runtime.sendMessage({
-
-                    action:
-                        "STOP_REVIEW"
-                });
-            }
+            () => forceCancelJob("review")
         );
 
     $("retryFailedBtn")
@@ -2229,6 +2218,7 @@ VALIDATION
 */
 
 async function startValidation() {
+    if (cancellationInProgress) return;
 
     const selected =
         assessments.filter(
@@ -2286,6 +2276,7 @@ async function startValidation() {
 }
 
 async function startReview() {
+    if (cancellationInProgress) return;
 
     const selected =
         assessments.filter(
@@ -2441,14 +2432,58 @@ PROGRESS
 ====================================================
 */
 
+function resetStoppedJobUi() {
+    validationResults = [];
+    reviewResults = [];
+    resultsRendered = false;
+    reviewResultsRendered = false;
+    renderResults([]);
+    renderReviewResults([]);
+    closeReviewNotesModal();
+    for (const id of ["cancelBtn", "cancelReviewBtn", "retryFailedBtn", "exportBtn",
+        "clearResultsBtn", "clearReviewResultsBtn", "progressContainer"]) {
+        $(id)?.classList.add("hidden");
+    }
+    $("progressFill").style.width = "0%";
+    $("progressText").textContent = "";
+}
+
+async function forceCancelJob(type) {
+    if (cancellationInProgress) return;
+    cancellationInProgress = true;
+    resultsViewGeneration++;
+    resetStoppedJobUi();
+    $("validateBtn").disabled = true;
+    $("reviewBtn").disabled = true;
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: type === "review" ? "STOP_REVIEW" : "STOP_VALIDATION"
+        });
+        if (!response?.success) throw new Error(response?.error || "Unable to stop the assessment job.");
+        resetStoppedJobUi();
+    } catch (error) {
+        $("progressContainer").classList.remove("hidden");
+        $("progressText").textContent = `Cancellation failed: ${error.message}`;
+        $(type === "review" ? "cancelReviewBtn" : "cancelBtn").classList.remove("hidden");
+    } finally {
+        resultsViewGeneration++;
+        cancellationInProgress = false;
+        $("validateBtn").disabled = false;
+        $("reviewBtn").disabled = false;
+    }
+}
+
 function startProgressPolling() {
 
     setInterval(
         async () => {
+            if (cancellationInProgress) return;
+            const generation = resultsViewGeneration;
 
             const data =
                 await chrome.storage.local.get([
 
+                    "resultsResetId",
                     "validationProgress",
 
                     "validationComplete",
@@ -2467,6 +2502,13 @@ function startProgressPolling() {
 
                     CONFIG.STORAGE_KEYS.LAST_ACTION
                 ]);
+            if (cancellationInProgress || generation !== resultsViewGeneration) return;
+            if (data.resultsResetId && data.resultsResetId !== lastResultsResetId) {
+                lastResultsResetId = data.resultsResetId;
+                resetStoppedJobUi();
+                $("validateBtn").disabled = false;
+                $("reviewBtn").disabled = false;
+            }
 
             const lastAction =
                 data[CONFIG.STORAGE_KEYS.LAST_ACTION] ||
@@ -2477,6 +2519,8 @@ function startProgressPolling() {
                 data.validationProgress &&
                 !data.validationComplete
             ) {
+                $("progressContainer").classList.remove("hidden");
+                $("cancelBtn").classList.remove("hidden");
 
                 renderProgress(
                     data.validationProgress,
@@ -2523,6 +2567,7 @@ function startProgressPolling() {
 
                 const failed =
                     await getFailedAssessments();
+                if (cancellationInProgress || generation !== resultsViewGeneration) return;
 
                 if (
                     failed.length
@@ -2546,6 +2591,9 @@ function startProgressPolling() {
                 data.reviewProgress &&
                 !data.reviewComplete
             ) {
+                $("progressContainer").classList.remove("hidden");
+                $("cancelReviewBtn").classList.remove("hidden");
+                $("reviewBtn").disabled = true;
 
                 renderProgress(
                     data.reviewProgress,
@@ -3126,6 +3174,10 @@ function replaceTemplatePlaceholders(
         "{{INCOMPLETE_ASSESSMENT_ID}}":
             templateValue(
                 review.incompleteAssessmentId
+            ),
+        "{{LAST_ASSESSMENT_ID}}":
+            templateValue(
+                review.lastAssessmentId
             ),
         "{{SURVEY_TEMPLATE_ID}}":
             templateValue(
@@ -4521,12 +4573,13 @@ function renderPrerequisites(
 }
 
 async function loadExistingResults() {
-
-    validationResults =
-        await getValidationResults();
-
-    reviewResults =
-        await getReviewResults();
+    if (cancellationInProgress) return;
+    const generation = resultsViewGeneration;
+    const savedValidationResults = await getValidationResults();
+    const savedReviewResults = await getReviewResults();
+    if (cancellationInProgress || generation !== resultsViewGeneration) return;
+    validationResults = savedValidationResults;
+    reviewResults = savedReviewResults;
 
     if (
         validationResults &&
@@ -4571,6 +4624,7 @@ async function loadExistingResults() {
         await chrome.storage.local.get(
             CONFIG.STORAGE_KEYS.LAST_ACTION
         );
+    if (cancellationInProgress || generation !== resultsViewGeneration) return;
 
     activateResultsTab(
         stored[CONFIG.STORAGE_KEYS.LAST_ACTION] === "review"
@@ -4580,6 +4634,7 @@ async function loadExistingResults() {
 
     const failed =
         await getFailedAssessments();
+    if (cancellationInProgress || generation !== resultsViewGeneration) return;
 
     if (
         failed.length
@@ -4662,9 +4717,12 @@ async function clearReviewResults() {
 }
 
 async function retryFailedAssessments() {
+    if (cancellationInProgress) return;
+    const generation = resultsViewGeneration;
 
     const failed =
         await getFailedAssessments();
+    if (cancellationInProgress || generation !== resultsViewGeneration) return;
 
     if (
         failed.length === 0

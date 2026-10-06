@@ -16,17 +16,22 @@ async function harness() {
     const requests = [];
     const creations = [];
     const tokens = new Map();
+    const tabTokens = new Map();
+    const sessionTokens = new Map();
+    const brokenTabs = new Set();
+    const clock = { now: Date.now() };
     let nextId = 1;
     const replies = new Map();
     const fetch = async (url, options) => {
         requests.push({ url, options });
         const queue = replies.get(url) || [];
-        const reply = queue.length > 1 ? queue.shift() : queue[0] || { status: 200, data: { data: url } };
+        const configured = queue.length > 1 ? queue.shift() : queue[0] || { status: 200, data: { data: url } };
+        const reply = typeof configured === "function" ? configured(options) : configured;
         if (reply.error) throw reply.error;
         return { ok: reply.status >= 200 && reply.status < 300, status: reply.status,
             url: reply.finalUrl || url, statusText: "test",
             json: async () => { if (reply.html) throw new SyntaxError("Not JSON"); return reply.data; },
-            text: async () => reply.html ? "<html>Sign in</html>" : JSON.stringify(reply.data) };
+            text: async () => typeof reply.html === "string" ? reply.html : reply.html ? "<html>Sign in</html>" : JSON.stringify(reply.data) };
     };
     const chrome = {
         runtime: {},
@@ -41,17 +46,22 @@ async function harness() {
         scripting: {
             executeScript(details, callback) {
                 const tab = tabs.get(details.target.tabId);
+                if (brokenTabs.has(tab.id)) return;
                 // Exercise the actual injected function in a page-like context.
                 const fn = vm.runInNewContext(`(${details.func.toString()})`, {
-                    URL, AbortSignal, location: { origin: new URL(tab.url).origin }, fetch,
-                    localStorage: { getItem: () => tokens.get(new URL(tab.url).origin) || null }
+                    URL, AbortSignal, location: { origin: new URL(tab.url).origin },
+                    fetch: (url, options) => fetch(url, { ...options, tabId: tab.id }),
+                    localStorage: { getItem: () => tabTokens.get(tab.id) ?? tokens.get(new URL(tab.url).origin) ?? null },
+                    sessionStorage: { getItem: () => sessionTokens.get(tab.id) || null }
                 });
                 fn(...details.args).then(result => callback([{ result }]));
             }
         }
     };
-    const context = vm.createContext({ URL, AbortSignal, chrome, fetch,
-        setTimeout: (callback, ms) => { timers.push({ callback, ms }); } });
+    const context = vm.createContext({ URL, AbortSignal, AbortController, chrome, fetch,
+        Date: class extends Date { static now() { return clock.now; } },
+        setTimeout: (callback, ms) => { const timer = { callback, ms }; timers.push(timer); return timer; },
+        clearTimeout: timer => { const index = timers.indexOf(timer); if (index !== -1) timers.splice(index, 1); } });
     const source = await readFile(new URL("../api/requestManager.js", import.meta.url), "utf8");
     vm.runInContext(source.replace(/^export /gm, ""), context);
     const addTab = (origin, status = "complete") => {
@@ -64,10 +74,11 @@ async function harness() {
         assert.ok(timers.length, "a retry should be scheduled");
         const timer = timers.shift();
         assert.equal(timer.ms, 10000, "all site retries wait exactly ten seconds");
+        clock.now += timer.ms;
         timer.callback();
         await flush();
     };
-    return { context, tabs, tokens, timers, requests, creations, replies, addTab, tick };
+    return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick };
 }
 
 test("missing ESATS retries only ESATS while Cairo and GTC results are retained", async () => {
@@ -108,7 +119,7 @@ test("recovery keeps retrying past the old ten-minute limit and refreshes the to
     assert.deepEqual(Array.from(await pending), ["ready"]);
     assert.equal(h.requests.length, 66);
     assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer refreshed-token");
-    assert.equal(h.creations.length, 0);
+    assert.ok(h.creations.length > 0, "long-lived authentication failures open a fresh login tab with a cooldown");
 });
 
 test("a failing GTC endpoint retries without refetching a successful GTC endpoint", async () => {
@@ -197,6 +208,185 @@ test("identical concurrent requests share one recovery loop", async () => {
     await flush();
     assert.equal(h.timers.length, 1);
     h.tokens.set(esatsOrigin, "test-token");
+    await h.tick();
+    await pending;
+    assert.equal(h.requests.length, 1);
+});
+
+test("force cancellation rejects immediately without waiting for the retry timer", async () => {
+    const h = await harness();
+    h.addTab(esatsOrigin);
+    const old = h.context.fetchJson(esatsUrl);
+    const stopped = assert.rejects(old, /cancelled/);
+    await flush();
+    h.context.cancelPendingRequests();
+    await stopped;
+    h.tokens.set(esatsOrigin, "test-token");
+    await h.context.fetchJson(esatsUrl);
+    const count = h.requests.length;
+    await h.tick();
+    assert.equal(h.requests.length, count, "old retry timers cannot issue another request");
+});
+
+test("late cancelled responses cannot repopulate cache or overwrite a new request", async () => {
+    const h = await harness();
+    let releaseOld;
+    h.context.fetch = async () => new Promise(resolve => { releaseOld = resolve; });
+    const old = h.context.fetchJson(cairoUrl);
+    const stopped = assert.rejects(old, /cancelled/);
+    await flush();
+    h.context.cancelPendingRequests();
+    h.context.fetch = async () => ({ ok: true, url: cairoUrl, json: async () => ({ version: "new" }) });
+    assert.equal((await h.context.fetchJson(cairoUrl)).version, "new");
+    await stopped;
+    releaseOld({ ok: true, url: cairoUrl, json: async () => ({ version: "old" }) });
+    await flush();
+    assert.equal((await h.context.fetchJson(cairoUrl)).version, "new");
+});
+
+test("ESATS switches from an expired-token tab to another working session and remembers it", async () => {
+    const h = await harness();
+    const expired = h.addTab(esatsOrigin);
+    const working = h.addTab(esatsOrigin);
+    h.tabTokens.set(expired.id, "expired");
+    h.tabTokens.set(working.id, "valid");
+    h.replies.set(esatsUrl, [options => options.headers.Authorization === "Bearer valid"
+        ? { status: 200, data: { ready: true } } : { status: 401 }]);
+    assert.equal((await h.context.fetchJson(esatsUrl)).ready, true);
+    assert.deepEqual(h.requests.map(request => request.options.tabId), [expired.id, working.id]);
+    await h.context.fetchJson(esatsUrl, { refreshCache: true });
+    assert.equal(h.requests.at(-1).options.tabId, working.id);
+    assert.equal(h.timers.length, 0);
+});
+
+test("GTC switches sessions and sends website cookies from the working tab", async () => {
+    const h = await harness();
+    const bad = h.addTab(gtcOrigin);
+    const good = h.addTab(gtcOrigin);
+    h.replies.set(gtcUrl, [options => options.tabId === bad.id
+        ? { status: 401 } : { status: 200, data: { ready: true } }]);
+    assert.equal((await h.context.fetchJson(gtcUrl)).ready, true);
+    assert.equal(h.requests.at(-1).options.tabId, good.id);
+    assert.equal(h.requests.at(-1).options.credentials, "include");
+    assert.equal(h.creations.length, 0);
+});
+
+test("Cairo falls back to its working website session when the worker receives login HTML", async () => {
+    const h = await harness();
+    const bad = h.addTab("https://cairois.web.boeing.com");
+    const good = h.addTab("https://cairois.web.boeing.com");
+    h.replies.set(cairoUrl, [options => options.tabId === good.id
+        ? { status: 200, data: { ready: true } } : { status: 200, html: true }]);
+    assert.equal((await h.context.fetchJson(cairoUrl)).ready, true);
+    assert.deepEqual(h.requests.map(request => request.options.tabId), [undefined, bad.id, good.id]);
+    assert.equal(h.timers.length, 0);
+});
+
+for (const [siteId, origin, url] of [["esats", esatsOrigin, esatsUrl], ["gtc", gtcOrigin, gtcUrl],
+    ["cairo", "https://cairois.web.boeing.com", cairoUrl]]) {
+    test(`${siteId}: an unresponsive injection times out, then a working alternative supplies the data`, async () => {
+        const h = await harness();
+        const broken = h.addTab(origin);
+        const good = h.addTab(origin);
+        h.brokenTabs.add(broken.id);
+        h.tokens.set(esatsOrigin, "valid");
+        if (siteId === "cairo") h.replies.set(url, [options => options.tabId
+            ? { status: 200, data: { ready: true } } : { status: 401 }]);
+        const pending = h.context.fetchJson(url);
+        await flush();
+        await h.tick();
+        assert.equal((await pending).ready ?? true, true);
+        assert.equal(h.requests.at(-1).options.tabId, good.id);
+        assert.equal(h.creations.length, 0);
+    });
+
+    test(`${siteId}: closed tabs are reopened and retries resume after sign-in`, async () => {
+        const h = await harness();
+        if (siteId === "cairo") h.replies.set(url, [options => options.tabId
+            ? { status: 200, data: { ready: true } } : { status: 401 }]);
+        const pending = h.context.fetchJson(url);
+        await flush();
+        assert.equal(h.creations.length, 1);
+        h.tabs.delete(h.creations[0].id);
+        await h.tick();
+        assert.equal(h.creations.length, 2);
+        h.creations[1].status = "complete";
+        h.tokens.set(esatsOrigin, "valid");
+        await h.tick();
+        await pending;
+        assert.equal(h.requests.at(-1).options.tabId, h.creations[1].id);
+    });
+}
+
+test("a stuck sign-on tab is retried then replaced without creating a tab every ten seconds", async () => {
+    const h = await harness();
+    const login = h.addTab("https://wsso.example");
+    h.context.rememberSiteTab("esats", login.id);
+    const pending = h.context.fetchJson(esatsUrl);
+    await flush();
+    for (let i = 0; i < 5; i++) await h.tick();
+    assert.equal(h.creations.length, 0, "give the current SSO flow time to finish");
+    await h.tick();
+    assert.equal(h.creations.length, 1);
+    h.creations[0].status = "complete";
+    h.tokens.set(esatsOrigin, "valid");
+    await h.tick();
+    await pending;
+    assert.equal(h.creations.length, 1);
+});
+
+test("ESATS also reads a token from the tab's session storage", async () => {
+    const h = await harness();
+    const tab = h.addTab(esatsOrigin);
+    h.sessionTokens.set(tab.id, JSON.stringify({ esatsToken: "session-token" }));
+    await h.context.fetchJson(esatsUrl);
+    assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer session-token");
+});
+
+test("Termbank CORS fallback retries without cookies only after a cross-origin network failure", async () => {
+    const h = await harness();
+    h.addTab(gtcOrigin);
+    h.replies.set(gtcUrl, [options => options.credentials === "include"
+        ? { error: new TypeError("CORS") } : { status: 200, data: { terms: ["ready"] } }]);
+    const result = await h.context.fetchJson(gtcUrl);
+    assert.equal(result.terms[0], "ready");
+    assert.deepEqual(h.requests.map(request => request.options.credentials), ["include", "omit"]);
+    assert.equal(h.timers.length, 0);
+});
+
+test("session probes switch tabs, reject sign-in HTML and preserve reachable GTC root 404 behavior", async () => {
+    const h = await harness();
+    const bad = h.addTab(gtcOrigin);
+    const good = h.addTab(gtcOrigin);
+    const url = "https://termbank.web.boeing.com/";
+    h.replies.set(url, [options => options.tabId === bad.id
+        ? { status: 200, html: "<html><title>Sign in</title></html>" } : { status: 404, data: { message: "No landing page" } }]);
+    assert.equal((await h.context.probeSiteSession("gtc", url)).sessionActive, true);
+    assert.equal(h.requests.at(-1).options.tabId, good.id);
+    assert.equal(h.creations.length, 0);
+});
+
+test("a session probe is force-cancellable even when the injected page never responds", async () => {
+    const h = await harness();
+    const tab = h.addTab(gtcOrigin);
+    h.brokenTabs.add(tab.id);
+    const pending = h.context.probeSiteSession("gtc", "https://termbank.web.boeing.com/");
+    const stopped = assert.rejects(pending, /cancelled/);
+    await flush();
+    h.context.cancelPendingRequests();
+    await stopped;
+    await h.tick();
+    assert.equal(h.requests.length, 0);
+    assert.equal(h.creations.length, 0);
+});
+
+test("a failed progress notification does not stop data retries", async () => {
+    const h = await harness();
+    const tab = h.addTab(esatsOrigin);
+    h.context.setRequestRecoveryHandlers({ onRetry: async () => { throw new Error("Progress unavailable"); } });
+    const pending = h.context.fetchJson(esatsUrl);
+    await flush();
+    h.sessionTokens.set(tab.id, "valid");
     await h.tick();
     await pending;
     assert.equal(h.requests.length, 1);

@@ -24,6 +24,8 @@ import {
 }
 from "../api/gtcApi.js";
 
+import { getAcpServiceAccountEvidence } from "../api/acpApi.js";
+
 export async function buildContext(
     assessment
 ) {
@@ -38,7 +40,8 @@ export async function buildContext(
         cairo,
         review,
         esats,
-        contacts
+        contacts,
+        acp
     ] =
     await Promise.all([
 
@@ -58,7 +61,9 @@ export async function buildContext(
             assetId
         ).catch(
             () => []
-        )
+        ),
+
+        getAcpServiceAccountEvidence(assessment.assetName)
     ]);
 
     const exportControl =
@@ -99,6 +104,8 @@ export async function buildContext(
         artifacts:
             esats.artifacts,
 
-        exportControl
+        exportControl,
+
+        acp
     };
 }

@@ -30,13 +30,78 @@ import {
 }
 from "./utils/constants.js";
 
-import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab } from "./api/requestManager.js";
+import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab, cancelPendingRequests, ensureSiteTab, probeSiteSession } from "./api/requestManager.js";
 
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
 let cairoJobRunning = false;
 let cairoTemplatesPromise = null;
 let cairoTemplatesUpdatedAt = 0;
+let replacingJob = false;
+let jobGeneration = 0;
+let jobStopController = new AbortController();
+let forceStopPromise = null;
+const activeJobPromises = new Set();
+
+function trackJob(promise) {
+    activeJobPromises.add(promise);
+    promise.then(() => activeJobPromises.delete(promise), () => activeJobPromises.delete(promise));
+    return promise;
+}
+
+function trackedProgress(callback) {
+    return progress => trackJob(callback(progress));
+}
+
+function jobRunningError() {
+    return Object.assign(new Error("Another assessment job is running. Wait for it to finish or cancel it and start the current app."), { code: "JOB_RUNNING" });
+}
+
+async function stopAndClearPreviousJobs() {
+    jobGeneration++;
+    cancellationRequested = true;
+    reviewCancellationRequested = true;
+    jobStopController.abort();
+    cancelPendingRequests();
+    // Drain old jobs before resetting flags or storage; fenced callbacks cannot write new results.
+    await Promise.allSettled([...activeJobPromises]);
+    validationRunning = false;
+    reviewRunning = false;
+    cairoJobRunning = false;
+    currentValidationId = null;
+    currentReviewId = null;
+    validationStartedAt = null;
+    reviewStartedAt = null;
+    await clearValidationData();
+    await clearReviewData();
+    await chrome.storage.local.remove(["lastAction", "validationCompletedAt", "reviewCompletedAt"]);
+    const saved = await chrome.storage.session.get(null);
+    const keys = Object.keys(saved).filter(key => key.startsWith("cairoJob:"));
+    if (keys.length) await chrome.storage.session.remove(keys);
+    await chrome.storage.local.set({ resultsResetId: crypto.randomUUID() });
+    cairoTemplatesPromise = null;
+    jobStopController = new AbortController();
+}
+
+function forceStopJobs() {
+    if (forceStopPromise) return forceStopPromise;
+    if (replacingJob) return Promise.reject(jobRunningError());
+    replacingJob = true;
+    forceStopPromise = stopAndClearPreviousJobs().finally(() => {
+        replacingJob = false;
+        forceStopPromise = null;
+    });
+    return forceStopPromise;
+}
+
+function interruptible(promise, signal) {
+    if (signal.aborted) return Promise.reject(new Error("Assessment job cancelled by user"));
+    return new Promise((resolve, reject) => {
+        const onAbort = () => reject(new Error("Assessment job cancelled by user"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+    });
+}
 
 async function getCairoTemplates() {
     if (!cairoTemplatesPromise || Date.now() - cairoTemplatesUpdatedAt > 60000) {
@@ -68,20 +133,23 @@ async function writeCairoJob(job) {
 }
 
 async function processCairoJob(job) {
+    const generation = jobGeneration;
     try {
         const [assessments, detail] = await Promise.all([
             refreshAssessments(), getAssessmentDetail(job.route.assessmentId)
         ]);
         const assessment = resolveCairoAssessment(job.route, assessments, detail);
         const reviewMode = await getValue(CONFIG.STORAGE_KEYS.REVIEW_MODE);
-        const pending = job.mode === "review"
+        if (generation !== jobGeneration) return;
+        const pending = trackJob(job.mode === "review"
             ? runReviewJob([assessment], { mode: reviewMode || "initial" })
-            : runValidationJob([assessment]);
+            : runValidationJob([assessment]));
         job.state = "running";
         job.runId = job.mode === "review" ? currentReviewId : currentValidationId;
         job.assetName = assessment.assetName;
         await writeCairoJob(job);
         await pending;
+        if (generation !== jobGeneration) return;
         const data = await chrome.storage.local.get([
             `${job.mode}Results`, `${job.mode}Error`, `${job.mode}Progress`
         ]);
@@ -94,9 +162,9 @@ async function processCairoJob(job) {
         job.error = error.message;
     } finally {
         try {
-            await writeCairoJob(job);
+            if (generation === jobGeneration) await writeCairoJob(job);
         } finally {
-            cairoJobRunning = false;
+            if (generation === jobGeneration) cairoJobRunning = false;
         }
     }
 }
@@ -133,8 +201,20 @@ async function handleCairoMessage(message, sender) {
     if (message.action === "CAIRO_SURVEY_ELIGIBILITY") return { success: true, eligible };
     if (!eligible) throw new Error("This survey template is not supported by RiskProfiler.");
     if (!["validation", "review"].includes(message.mode)) throw new Error("Invalid assessment action.");
-    if (cairoJobRunning || validationRunning || reviewRunning) throw new Error("Another assessment job is running. Wait for it to finish before starting this one.");
+    if (replacingJob) throw jobRunningError();
+    if (message.replaceExisting === true) {
+        replacingJob = true;
+        try {
+            await stopAndClearPreviousJobs();
+        } catch (error) {
+            replacingJob = false;
+            throw error;
+        }
+    } else if (cairoJobRunning || validationRunning || reviewRunning) {
+        throw jobRunningError();
+    }
     cairoJobRunning = true;
+    replacingJob = false;
     const job = { jobId: crypto.randomUUID(), route, mode: message.mode, state: "preparing", startedAt: Date.now() };
     try {
         // Keep session snapshots bounded; do not touch normal popup results.
@@ -148,7 +228,7 @@ async function handleCairoMessage(message, sender) {
         cairoJobRunning = false;
         throw error;
     }
-    processCairoJob(job).catch(console.error);
+    trackJob(processCairoJob(job)).catch(console.error);
     return { success: true, jobId: job.jobId };
 }
 
@@ -181,24 +261,24 @@ const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 const SESSION_RETRY_INTERVAL_MS = 10000;
 
 setRequestRecoveryHandlers({
-    shouldCancel: () => (validationRunning && !reviewRunning && cancellationRequested) ||
+    shouldCancel: () => replacingJob || (validationRunning && !reviewRunning && cancellationRequested) ||
         (reviewRunning && !validationRunning && reviewCancellationRequested),
-    onRetry: async ({ siteName, attempt }) => {
+    onRetry: ({ siteName, attempt }) => trackJob((async () => {
+        const generation = jobGeneration;
+        if (replacingJob) return;
         const current = `Waiting for ${siteName} data — retry ${attempt}, checking again in 10 seconds`;
         for (const [running, type] of [[validationRunning, "validation"], [reviewRunning, "review"]]) {
             if (!running) continue;
             const key = `${type}Progress`;
             const data = await chrome.storage.local.get(key);
+            if (generation !== jobGeneration) return;
             await chrome.storage.local.set({
                 [key]: { ...data[key], current },
                 [`${type}Status`]: current
             });
         }
-    }
+    })())
 });
-
-const prerequisiteTabIds =
-    new Map();
 
 async function configurePluginLayout(
     requestedMode
@@ -424,6 +504,7 @@ async function runValidationJob(
 
     cancellationRequested = false;
     validationRunning = true;
+    const generation = jobGeneration;
 
     const failedAssessments = [];
 
@@ -496,7 +577,8 @@ async function runValidationJob(
 
                 assessments,
 
-                async progress => {
+                trackedProgress(async progress => {
+                    if (generation !== jobGeneration) return;
 
                     const {
                         assessment,
@@ -545,14 +627,18 @@ async function runValidationJob(
                         ...progressState
                     });
 
+                    if (generation !== jobGeneration) return;
+
                     await updateStatus(
 
                         `Processing ${progressState.completed}/${progressState.total}`
                     );
-                },
+                }),
 
                 () => cancellationRequested
             );
+
+        if (generation !== jobGeneration || cancellationRequested) throw new Error("Validation cancelled by user");
 
         await saveValidationResults(
             results
@@ -608,7 +694,7 @@ async function runValidationJob(
 
         console.error(error);
 
-        await updateError(
+        if (generation === jobGeneration) await updateError(
             error.message
         );
 
@@ -616,7 +702,7 @@ async function runValidationJob(
 
     } finally {
 
-        validationRunning = false;
+        if (generation === jobGeneration) validationRunning = false;
     }
 }
 
@@ -642,6 +728,7 @@ async function runReviewJob(
 
     reviewCancellationRequested = false;
     reviewRunning = true;
+    const generation = jobGeneration;
 
     currentReviewId =
         createRunId();
@@ -712,7 +799,8 @@ async function runReviewJob(
 
                 reviewConfig,
 
-                async progress => {
+                trackedProgress(async progress => {
+                    if (generation !== jobGeneration) return;
 
                     const {
                         assessment,
@@ -731,15 +819,18 @@ async function runReviewJob(
                         ...progressState
                     });
 
+                    if (generation !== jobGeneration) return;
+
                     await updateReviewStatus(
 
                         `Reviewing ${progressState.completed}/${progressState.total}`
                     );
-                },
+                }),
 
                 () => reviewCancellationRequested
             );
 
+        if (generation !== jobGeneration || reviewCancellationRequested) throw new Error("Review cancelled by user");
         await saveReviewResults(
             results
         );
@@ -789,7 +880,7 @@ async function runReviewJob(
 
         console.error(error);
 
-        await updateReviewError(
+        if (generation === jobGeneration) await updateReviewError(
             error.message
         );
 
@@ -797,7 +888,7 @@ async function runReviewJob(
 
     } finally {
 
-        reviewRunning = false;
+        if (generation === jobGeneration) reviewRunning = false;
     }
 }
 
@@ -847,150 +938,6 @@ async function clearReviewData() {
     ]);
 }
 
-function isLoginRedirect(
-    finalUrl,
-    expectedHosts
-) {
-
-    let parsed;
-
-    try {
-
-        parsed =
-            new URL(
-                finalUrl
-            );
-
-    } catch {
-
-        return true;
-    }
-
-    const host =
-        parsed.hostname.toLowerCase();
-
-    const expected =
-        expectedHosts.map(
-            item =>
-                item.toLowerCase()
-        );
-
-    const urlText =
-        finalUrl.toLowerCase();
-
-    return !expected.includes(
-        host
-    ) ||
-        urlText.includes(
-            "login"
-        ) ||
-        urlText.includes(
-            "logon"
-        ) ||
-        urlText.includes(
-            "sso"
-        ) ||
-        urlText.includes(
-            "wsso"
-        );
-}
-
-async function ensurePrerequisiteTab(
-    check
-) {
-
-    const openUrl =
-        check.openUrl ||
-        check.url;
-
-    const tabs =
-        await chrome.tabs.query({
-            url:
-                `${openUrl}*`
-        });
-
-    const matchingTab =
-        tabs.find(
-            tab =>
-                tab.id
-        );
-
-    if (
-        matchingTab
-    ) {
-
-        prerequisiteTabIds.set(
-            check.id,
-            matchingTab.id
-        );
-
-        return {
-            tab:
-                matchingTab,
-            opened:
-                false
-        };
-    }
-
-    const trackedTabId =
-        prerequisiteTabIds.get(
-            check.id
-        );
-
-    if (
-        trackedTabId
-    ) {
-
-        try {
-
-            const trackedTab =
-                await chrome.tabs.get(
-                    trackedTabId
-                );
-
-            if (
-                trackedTab?.id
-            ) {
-
-                return {
-                    tab:
-                        trackedTab,
-                    opened:
-                        false
-                };
-            }
-
-        } catch {
-
-            prerequisiteTabIds.delete(
-                check.id
-            );
-        }
-    }
-
-    const openedTab =
-        await chrome.tabs.create({
-            url:
-                openUrl
-        });
-
-    if (
-        openedTab?.id
-    ) {
-
-        prerequisiteTabIds.set(
-            check.id,
-            openedTab.id
-        );
-    }
-
-    return {
-        tab:
-            openedTab,
-        opened:
-            true
-    };
-}
 
 async function tryEnsurePrerequisiteTab(
     check
@@ -998,9 +945,8 @@ async function tryEnsurePrerequisiteTab(
 
     try {
 
-        return await ensurePrerequisiteTab(
-            check
-        );
+        const tab = await ensureSiteTab(check.id);
+        return { tab, opened: tab?.status !== "complete" };
 
     } catch (error) {
 
@@ -1018,44 +964,6 @@ async function tryEnsurePrerequisiteTab(
     }
 }
 
-async function hasEsatsToken(
-    tab
-) {
-
-    if (
-        !tab?.id ||
-        tab.status !== "complete"
-    ) {
-
-        return false;
-    }
-
-    try {
-
-        const results =
-            await chrome.scripting.executeScript({
-                target: {
-                    tabId:
-                        tab.id
-                },
-                world:
-                    "MAIN",
-                func:
-                    () =>
-                        Boolean(
-                            localStorage.getItem(
-                                "esatsToken"
-                            )
-                        )
-            });
-
-        return results?.[0]?.result === true;
-
-    } catch {
-
-        return false;
-    }
-}
 
 async function checkPrerequisite(
     check,
@@ -1084,86 +992,9 @@ async function checkPrerequisite(
                 openedTab: tabState.opened, message: "Cairo data is accessible" };
         }
 
-        const response =
-            await fetch(
-                check.id === "esats" ? check.openUrl : check.url,
-                {
-                    credentials:
-                        "include",
-
-                    cache:
-                        "no-store",
-
-                    redirect:
-                        "follow",
-
-                    signal:
-                        AbortSignal.timeout(
-                            10000
-                        )
-                }
-            );
-
-        const finalUrl =
-            response.url || check.url;
-
-        const redirectedToLogin =
-            isLoginRedirect(
-                finalUrl,
-                check.expectedHosts
-            );
-
-        const unauthorized =
-            response.status === 401 ||
-            response.status === 403;
-
-        const endpointPassed =
-            !redirectedToLogin &&
-            !unauthorized &&
-            response.status < 500;
-
-        const pagePassed =
-            check.id === "esats"
-                ? await hasEsatsToken(
-                    tabState.tab
-                )
-                : tabState.tab?.status === "complete" &&
-                    tabState.tab.url?.startsWith(check.openUrl);
-
-        const passed =
-            endpointPassed &&
-            pagePassed;
-
-        const openedTab =
-            tabState.opened;
-
-        return {
-
-            id:
-                check.id,
-
-            name:
-                check.name,
-
-            passed,
-
-            status:
-                response.status,
-
-            finalUrl,
-
-            openedTab,
-
-            message:
-                passed
-                    ? `${check.name} session is active`
-                    : check.id === "esats" &&
-                        !pagePassed
-                        ? `${check.name} is waiting for sign-in${openedTab ? "; opened ESATS in a new tab" : ""}`
-                    : redirectedToLogin
-                        ? `${check.name} redirected to sign-on${openedTab ? `; opened ${check.name} in a new tab` : ""}`
-                        : `${check.name} returned HTTP ${response.status}${openedTab ? `; opened ${check.name} in a new tab` : ""}`
-        };
+        await probeSiteSession(check.id, check.id === "esats" ? check.openUrl : check.url);
+        return { id: check.id, name: check.name, passed: true, status: 200,
+            finalUrl: check.url, openedTab: tabState.opened, message: `${check.name} session is active` };
 
     } catch (error) {
 
@@ -1196,6 +1027,7 @@ async function checkPrerequisite(
 }
 
 async function checkPrerequisites(previousChecks = [], assetId) {
+    const generation = jobGeneration;
 
     if (!assetId) assetId = (await getValue(CONFIG.STORAGE_KEYS.ASSESSMENTS))?.[0]?.assetId;
 
@@ -1221,11 +1053,7 @@ async function checkPrerequisites(previousChecks = [], assetId) {
         checks
     };
 
-    await chrome.storage.local.set({
-
-        prerequisiteStatus:
-            result
-    });
+    if (generation === jobGeneration) await chrome.storage.local.set({ prerequisiteStatus: result });
 
     return result;
 }
@@ -1256,6 +1084,7 @@ async function waitForPrerequisiteSessions({
 
     let previousChecks = [];
     let attempt = 0;
+    const stopSignal = jobStopController.signal;
 
     while (
         true
@@ -1271,7 +1100,7 @@ async function waitForPrerequisiteSessions({
         }
 
         const prerequisites =
-            await checkPrerequisites(previousChecks, assetId);
+            await interruptible(checkPrerequisites(previousChecks, assetId), stopSignal);
         previousChecks = prerequisites.checks;
         attempt++;
 
@@ -1317,9 +1146,7 @@ async function waitForPrerequisiteSessions({
             startedAt
         });
 
-        await delay(
-            SESSION_RETRY_INTERVAL_MS
-        );
+        await interruptible(delay(SESSION_RETRY_INTERVAL_MS), stopSignal);
     }
 }
 
@@ -1393,12 +1220,12 @@ chrome.runtime.onMessage.addListener(
 
                         case "START_VALIDATION":
 
-                            if (cairoJobRunning) throw new Error("A Cairo assessment job is already running.");
+                            if (cairoJobRunning || replacingJob) throw jobRunningError();
 
-                            runValidationJob(
+                            trackJob(runValidationJob(
 
                                 message.assessments
-                            ).catch(error => {
+                            )).catch(error => {
 
                                 console.error(
                                     error
@@ -1416,14 +1243,14 @@ chrome.runtime.onMessage.addListener(
 
                         case "START_REVIEW":
 
-                            if (cairoJobRunning) throw new Error("A Cairo assessment job is already running.");
+                            if (cairoJobRunning || replacingJob) throw jobRunningError();
 
-                            runReviewJob(
+                            trackJob(runReviewJob(
 
                                 message.assessments,
 
                                 message.reviewConfig || {}
-                            ).catch(error => {
+                            )).catch(error => {
 
                                 console.error(
                                     error
@@ -1464,12 +1291,7 @@ chrome.runtime.onMessage.addListener(
                             break;
 
                         case "STOP_VALIDATION":
-
-                            cancellationRequested = true;
-
-                            await updateStatus(
-                                "Cancellation requested"
-                            );
+                            await forceStopJobs();
 
                             sendResponse({
                                 success:true
@@ -1491,12 +1313,7 @@ chrome.runtime.onMessage.addListener(
                             break;
 
                         case "STOP_REVIEW":
-
-                            reviewCancellationRequested = true;
-
-                            await updateReviewStatus(
-                                "Review cancellation requested"
-                            );
+                            await forceStopJobs();
 
                             sendResponse({
                                 success:true
@@ -1544,7 +1361,8 @@ chrome.runtime.onMessage.addListener(
                         success: false,
 
                         error:
-                            error.message
+                            error.message,
+                        code: error.code || null
                     });
                 }
 
