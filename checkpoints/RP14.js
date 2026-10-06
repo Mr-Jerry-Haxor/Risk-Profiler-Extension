@@ -8,13 +8,13 @@ import {
 }
 from "./helpers.js";
 
-const RP13 = {
-    id: "RP13",
-    name: "Nonperson accounts are restricted to authorized purpose",
+const RP14 = {
+    id: "RP14",
+    name: "Nonperson accounts are managed",
     category: "SCR",
     requiredQuestions: [
         "CSIR-SvcAcct",
-        "CSIR-SCR-NonpersonAcct-Restricted"
+        "CSIR-SCR-NonpersonAcct-Managed"
     ],
 
     async validate(context) {
@@ -35,28 +35,28 @@ const RP13 = {
         if (
             includesValue(
                 context,
-                "CSIR-SCR-NonpersonAcct-Restricted",
+                "CSIR-SCR-NonpersonAcct-Managed",
                 "No"
             )
         ) {
 
             return fail(
                 this.id,
-                "CSIR-SCR-NonpersonAcct-Restricted is No."
+                "CSIR-SCR-NonpersonAcct-Managed is No."
             );
         }
 
         if (
             includesValue(
                 context,
-                "CSIR-SCR-NonpersonAcct-Restricted",
+                "CSIR-SCR-NonpersonAcct-Managed",
                 "Yes"
             )
         ) {
 
             return pass(
                 this.id,
-                "CSIR-SCR-NonpersonAcct-Restricted is Yes."
+                "CSIR-SCR-NonpersonAcct-Managed is Yes."
             );
         }
 
@@ -68,15 +68,15 @@ const RP13 = {
 
             return notApplicable(
                 this.id,
-                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Restricted is not answered."
+                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Managed is not answered."
             );
         }
 
         return fail(
             this.id,
-            "CSIR-SCR-NonpersonAcct-Restricted is not answered."
+            "CSIR-SCR-NonpersonAcct-Managed is not answered."
         );
     }
 };
 
-export default RP13;
+export default RP14;

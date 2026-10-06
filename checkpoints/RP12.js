@@ -1,5 +1,6 @@
 import {
     fail,
+    getValues,
     hasRiskProfilerApprovals,
     includesValue,
     isYes,
@@ -9,12 +10,16 @@ import {
 from "./helpers.js";
 
 const RP12 = {
+
     id: "RP12",
-    name: "Nonperson accounts are restricted to authorized purpose",
+
+    name: "Nonperson accounts are removed/disabled when not required",
+
     category: "SCR",
+
     requiredQuestions: [
         "CSIR-SvcAcct",
-        "CSIR-SCR-NonpersonAcct-Restricted"
+        "CSIR-SCR-NonpersonAcct-Disable"
     ],
 
     async validate(context) {
@@ -35,28 +40,41 @@ const RP12 = {
         if (
             includesValue(
                 context,
-                "CSIR-SCR-NonpersonAcct-Restricted",
+                "CSIR-SCR-NonpersonAcct-Disable",
                 "No"
             )
         ) {
 
-            return fail(
+            return pass(
                 this.id,
-                "CSIR-SCR-NonpersonAcct-Restricted is No."
+                "CSIR-SCR-NonpersonAcct-Disable is No."
             );
         }
 
         if (
             includesValue(
                 context,
-                "CSIR-SCR-NonpersonAcct-Restricted",
+                "CSIR-SCR-NonpersonAcct-Disable",
                 "Yes"
             )
         ) {
 
             return pass(
                 this.id,
-                "CSIR-SCR-NonpersonAcct-Restricted is Yes."
+                "CSIR-SCR-NonpersonAcct-Disable is Yes."
+            );
+        }
+
+        if (
+            getValues(
+                context,
+                "CSIR-SCR-NonpersonAcct-Disable"
+            ).length > 0
+        ) {
+
+            return fail(
+                this.id,
+                "CSIR-SCR-NonpersonAcct-Disable has a selected value other than Yes or No."
             );
         }
 
@@ -68,13 +86,13 @@ const RP12 = {
 
             return notApplicable(
                 this.id,
-                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Restricted is not answered."
+                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Disable is not answered."
             );
         }
 
         return fail(
             this.id,
-            "CSIR-SCR-NonpersonAcct-Restricted is not answered."
+            "CSIR-SCR-NonpersonAcct-Disable is not answered."
         );
     }
 };

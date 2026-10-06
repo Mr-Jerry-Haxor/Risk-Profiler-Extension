@@ -1,0 +1,30 @@
+
+
+
+
+
+
+pre-requsities : ESATS link need to update , and make all links robust
+
+
+
+
+RP11 : add CSIR-SvcAcct - need to check ACP for non person identifer accounts.
+
+
+
+add validate with checkpoint button in CAIRO tool beside finish later for ongoing risk proflier assements and show the resluts in model card. ( if required website not active, open in new tab)
+
+check sessions if shows needs sign in - then open the website in new tab directly. 
+
+add last assessment id variable in email template.
+
+Add not applicable option for all the branch question options. 
+
+issues:
+
+	5D002.c.1 JCD value is missing in GTC mapper , so add condition , if the exact value can't find in GTC mapper , try for other version(i mean parent version eg: a.b.c not found then check for a.b ) find or not like 	"5D002.c" for "5D002.c.1" , if you doing this way , show clearly that what you found in esats , what you refering in GTC mapper , if you cant found show error info with details.
+
+    RP7 : if app is SAAS , check esats for JCD value , if exsists then check with risk profiler answer and if matched pass, if not matched fail , if esats dont have value when app is SAAS , then make it NA.  
+
+    RP4 :  if the app is SAAS , make the checkpoint NA. 

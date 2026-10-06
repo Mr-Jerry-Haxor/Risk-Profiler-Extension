@@ -667,6 +667,15 @@ h1 {
     flex: 1;
 }
 
+.assessment-header-actions {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+}
+
 .manager-search-select {
 
     position: relative;

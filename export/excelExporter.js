@@ -1,7 +1,7 @@
 
 const TEMPLATE_PATH =
     chrome.runtime.getURL(
-        "assets/encoded_data.txt"
+        "assets/RP_Checklist_2.6.1_encoded.txt"
     );
 
 export async function exportResults(validationResults) {

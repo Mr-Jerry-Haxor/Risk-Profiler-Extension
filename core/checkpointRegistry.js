@@ -11,6 +11,7 @@ import RP10 from "../checkpoints/RP10.js";
 import RP11 from "../checkpoints/RP11.js";
 import RP12 from "../checkpoints/RP12.js";
 import RP13 from "../checkpoints/RP13.js";
+import RP14 from "../checkpoints/RP14.js";
 
 export const CHECKPOINTS = [
 
@@ -26,5 +27,6 @@ export const CHECKPOINTS = [
     RP10,
     RP11,
     RP12,
-    RP13
+    RP13,
+    RP14
 ];

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Risk Profiler Review and Validate Automation",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Risk Profiler Assessment Review and Validation Engine",
   "permissions": [
     "storage",
@@ -21,7 +21,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "assets/encoded_data.txt"
+        "assets/RP_Checklist_2.6.1_encoded.txt"
       ],
       "matches": [
         "<all_urls>"

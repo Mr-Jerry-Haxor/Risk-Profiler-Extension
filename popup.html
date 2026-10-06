@@ -24,16 +24,9 @@
         <div class="header-actions">
 
             <span class="version-label">
-                Quality control List version : 2.5
+                Quality control List version : 2.6.1
                 <span id="whatsNewIcon" class="whats-new-icon" title="What's New">📣What's New</span>
             </span>
-
-            <button id="refreshBtn"
-                    class="icon-btn"
-                    title="Refresh assessments"
-                    aria-label="Refresh assessments">
-                ↻
-            </button>
 
             <button id="layoutSettingsBtn"
                     class="icon-btn"
@@ -204,24 +197,51 @@
             placeholder="Search applications or regex..."
         >
 
-        <label class="field-label date-source-field">
-            <span>
-                Date Filter Based On
-            </span>
+        <div class="grid-2">
 
-            <select
-                id="dateFilterField"
-                class="input"
-            >
-                <option value="surveyCompletedOn">
-                    Survey Completed On
-                </option>
+            <label class="field-label date-source-field">
+                <span>
+                    Date Filter Based On
+                </span>
 
-                <option value="dueOn">
-                    Due On
-                </option>
-            </select>
-        </label>
+                <select
+                    id="dateFilterField"
+                    class="input"
+                >
+                    <option value="surveyCompletedOn">
+                        Survey Completed On
+                    </option>
+
+                    <option value="dueOn">
+                        Due On
+                    </option>
+                </select>
+            </label>
+
+            <label class="field-label date-source-field">
+                <span>
+                    Sort By
+                </span>
+
+                <select
+                    id="assessmentSortField"
+                    class="input"
+                >
+                    <option value="assetName">
+                        Asset Name
+                    </option>
+
+                    <option value="dueOn">
+                        Due Date
+                    </option>
+
+                    <option value="surveyCompletedOn">
+                        Survey Completed
+                    </option>
+                </select>
+            </label>
+
+        </div>
 
         <div class="grid-2">
 
@@ -306,15 +326,24 @@
         <div class="card-title-row">
 
             <span>
-                Assessments
+                Assessments (<span id="assessmentTotal">0</span>)
             </span>
 
-            <span
-                id="selectedCount"
-                class="badge"
-            >
-                0 Selected
-            </span>
+            <div class="assessment-header-actions">
+                <span
+                    id="selectedCount"
+                    class="badge"
+                >
+                    0 Selected
+                </span>
+
+                <button id="refreshBtn"
+                        class="icon-btn"
+                        title="Refresh assessments"
+                        aria-label="Refresh assessments">
+                    ↻
+                </button>
+            </div>
 
         </div>
 
@@ -633,14 +662,14 @@
                     <input type="radio" name="pluginLayout" value="popup">
                     <span>
                         <strong>Pop-up mode</strong>
-                        <small>Open the current layout from the Edge toolbar. This is the default.</small>
+                        <small>Open the current layout from the Edge toolbar.</small>
                     </span>
                 </label>
                 <label class="layout-mode-option">
                     <input type="radio" name="pluginLayout" value="side-pane">
                     <span>
                         <strong>Side-pane mode</strong>
-                        <small>Keep the extension open beside the current tab and adapt it to the pane size.</small>
+                        <small>Keep the extension open beside the current tab and adapt it to the pane size. This is the default.</small>
                     </span>
                 </label>
                 <section id="asaSettingsSection" class="asa-settings-section hidden">

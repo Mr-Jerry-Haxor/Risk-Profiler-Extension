@@ -94,7 +94,7 @@ let asaSettings = {
 
 const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
 
-const DEFAULT_PLUGIN_LAYOUT = "popup";
+const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
 /*
 ====================================================
@@ -158,7 +158,13 @@ async function loadAssessments() {
         await getAssessments();
 
     filteredAssessments =
-        [...assessments];
+        filterAssessments(
+            assessments,
+            {
+                sortBy:
+                    "assetName"
+            }
+        );
 
     populateOwnerFilter();
 
@@ -1242,6 +1248,12 @@ function attachEvents() {
             applyFilters
         );
 
+    $("assessmentSortField")
+        ?.addEventListener(
+            "change",
+            applyFilters
+        );
+
     $("assessmentStatusFilter")
         ?.addEventListener(
             "change",
@@ -1739,6 +1751,10 @@ function applyFilters() {
             $("dateFilterField")
                 ?.value || "surveyCompletedOn",
 
+        sortBy:
+            $("assessmentSortField")
+                ?.value || "assetName",
+
         assessmentStatus:
             $("assessmentStatusFilter")
                 ?.value || ""
@@ -1789,6 +1805,9 @@ function clearFilters() {
     $("dateFilterField").value =
         "surveyCompletedOn";
 
+    $("assessmentSortField").value =
+        "assetName";
+
     $("assessmentStatusFilter").value = "";
 
     $("ownerSearchInput").value = "";
@@ -1799,7 +1818,13 @@ function clearFilters() {
     updateOwnerOptions();
 
     filteredAssessments =
-        [...assessments];
+        filterAssessments(
+            assessments,
+            {
+                sortBy:
+                    "assetName"
+            }
+        );
 
     renderAssessments();
 }
@@ -1817,7 +1842,24 @@ function renderAssessments() {
 
     container.innerHTML = "";
 
-    filteredAssessments.forEach(
+    const visibleAssessments =
+        filteredAssessments
+            .slice()
+            .sort(
+                (left, right) =>
+                    Number(
+                        selectedAssessmentIds.includes(
+                            right.assessmentId
+                        )
+                    ) -
+                    Number(
+                        selectedAssessmentIds.includes(
+                            left.assessmentId
+                        )
+                    )
+            );
+
+    visibleAssessments.forEach(
         assessment => {
 
             const status =
@@ -2064,6 +2106,9 @@ function bindCheckboxes() {
 }
 
 function updateSelectedCount() {
+
+    $("assessmentTotal").textContent =
+        assessments.length;
 
     $("selectedCount").textContent =
         `${selectedAssessmentIds.length} Selected`;
@@ -4378,7 +4423,9 @@ function renderPrerequisites(
             message.textContent =
                 check.passed
                     ? "Active"
-                    : "Needs sign-in";
+                    : check.openedTab
+                        ? "Needs sign-in (ESATS tab opened)"
+                        : "Needs sign-in";
         }
 
         item.title =

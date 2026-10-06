@@ -1,98 +1,97 @@
 import {
     fail,
-    getValues,
-    hasRiskProfilerApprovals,
     includesValue,
     isYes,
     notApplicable,
-    pass
+    pass,
+    valueContainsAny
 }
 from "./helpers.js";
 
 const RP11 = {
-
     id: "RP11",
-
-    name: "Nonperson accounts are removed/disabled when not required",
-
-    category: "SCR",
-
+    name: "Applications requiring service accounts answer Yes",
+    category: "Users",
     requiredQuestions: [
-        "CSIR-SvcAcct",
-        "CSIR-SCR-NonpersonAcct-Disable"
+    "CSIR-AppType",
+    "CSIR-SvcAcct"
     ],
 
     async validate(context) {
 
+        const databaseUsed =
+            isYes(
+                context,
+                "CSIR-Database"
+            );
+
+        const serviceAccountExpected =
+            databaseUsed ||
+
+            valueContainsAny(
+                context,
+                "CSIR-AppType",
+                [
+                    "Web application",
+                    "Web service",
+                    "API",
+                    "Client-Server",
+                    "Dashboard / BI",
+                    "PowerBI",
+                    "Cognos",
+                    "Tableau",
+                    "Database / Data Warehouse",
+                    "Data Mart",
+                    "Analytics platform"
+                ]
+            );
+
         if (
-            !isYes(
+            !serviceAccountExpected
+        ) {
+
+            return notApplicable(
+                this.id,
+                "Application characteristics do not indicate required service account usage."
+            );
+        }
+
+        if (
+            isYes(
                 context,
                 "CSIR-SvcAcct"
             )
         ) {
 
-            return notApplicable(
+            return pass(
                 this.id,
-                "CSIR-SvcAcct is not Yes."
+                databaseUsed
+                    ? "Database usage is present and service accounts are identified."
+                    : "Application type indicates service account usage and CSIR-SvcAcct is Yes."
             );
         }
 
         if (
             includesValue(
                 context,
-                "CSIR-SCR-NonpersonAcct-Disable",
+                "CSIR-SvcAcct",
                 "No"
             )
         ) {
 
-            return pass(
-                this.id,
-                "CSIR-SCR-NonpersonAcct-Disable is No."
-            );
-        }
-
-        if (
-            includesValue(
-                context,
-                "CSIR-SCR-NonpersonAcct-Disable",
-                "Yes"
-            )
-        ) {
-
-            return pass(
-                this.id,
-                "CSIR-SCR-NonpersonAcct-Disable is Yes."
-            );
-        }
-
-        if (
-            getValues(
-                context,
-                "CSIR-SCR-NonpersonAcct-Disable"
-            ).length > 0
-        ) {
-
             return fail(
                 this.id,
-                "CSIR-SCR-NonpersonAcct-Disable has a selected value other than Yes or No."
-            );
-        }
-
-        if (
-            hasRiskProfilerApprovals(
-                context
-            )
-        ) {
-
-            return notApplicable(
-                this.id,
-                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Disable is not answered."
+                databaseUsed
+                    ? "CSIR-Database is Yes, therefore service accounts are expected, but CSIR-SvcAcct is No."
+                    : "Application type indicates service account usage, but CSIR-SvcAcct is No."
             );
         }
 
         return fail(
             this.id,
-            "CSIR-SCR-NonpersonAcct-Disable is not answered."
+            databaseUsed
+                ? "CSIR-Database is Yes, but CSIR-SvcAcct is not answered."
+                : "Application type indicates service account usage, but CSIR-SvcAcct is not answered."
         );
     }
 };

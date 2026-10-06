@@ -33,7 +33,7 @@ The extension uses the following stack:
 | Bundling | esbuild | Bundles `popup.js` and `service_worker.js` into `dist/`. |
 | Storage | Edge extension local storage with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
 | API access | `fetch()` with Edge session cookies and trusted-tab script execution | Calls Cairo directly and calls ESATS/GTC through signed-in trusted Edge tabs where needed. |
-| Validation engine | Local JavaScript checkpoint modules `RP1` through `RP13` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
+| Validation engine | Local JavaScript checkpoint modules `RP1` through `RP14` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
 | Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
 | Excel export | Bundled `ExcelJS` plus encoded workbook template | Creates validation workbook with summary and assessment-level sheets. |
 | Word export | Custom OpenXML `.docx` generator | Creates Word review notes with formatted tables, sections, and clickable checkbox content controls. |
@@ -149,7 +149,7 @@ Important distinction:
 
 ### 2(a). Requests to Validate One Assessment
 
-Validation builds a context and then runs RP1 through RP13 locally.
+Validation builds a context and then runs RP1 through RP14 locally.
 
 Per selected assessment, baseline validation requests:
 
@@ -305,9 +305,9 @@ Because review runs 3 assessments concurrently, 10 assessments are processed in 
    - ESATS artifacts
    - GTC export-control vocabulary data
 6. RP2 and RP3 can make conditional Cairo question-summary calls and extract URL evidence from either collector-style response data or nested JSON-style collected data.
-7. `runValidation()` executes RP1 through RP13.
-8. RP11, RP12, and RP13 treat unanswered service-account follow-up questions as `NA` when `CSIR-SvcAcct` is `Yes` and RP1 approvals are present.
-9. RP11 passes explicit `Yes` or `No` values, fails other selected values, and only fails an unanswered question when the RP1 approval exception does not apply.
+7. `runValidation()` executes RP1 through RP14.
+8. RP12, RP13, and RP14 treat unanswered service-account follow-up questions as `NA` when `CSIR-SvcAcct` is `Yes` and RP1 approvals are present.
+9. RP12 passes explicit `Yes` or `No` values, fails other selected values, and only fails an unanswered question when the RP1 approval exception does not apply.
 10. `scoreCalculator` computes pass/fail/N/A summary and score.
 11. Results are stored under validation storage keys.
 12. Popup renders validation cards and allows Excel export.
@@ -463,7 +463,7 @@ User action
 - `core/contextBuilder.js`: collects all context.
 - `core/batchValidator.js`: concurrency and progress.
 - `core/validationEngine.js`: runs checkpoints.
-- `core/checkpointRegistry.js`: registers RP1-RP13.
+- `core/checkpointRegistry.js`: registers RP1-RP14.
 - `checkpoints/*.js`: individual validation logic.
 - `export/excelExporter.js`: Excel workbook output.
 
@@ -637,7 +637,7 @@ Load in Microsoft Edge:
 ## Current Version
 
 ```text
-Extension version: 1.0.0
+Extension version: 1.2.0
 Manifest: Microsoft Edge Manifest V3
 Primary modes: Validation Mode, Initial Review Mode, and Review Based on Selected Answers
 ```
@@ -688,13 +688,21 @@ RP10.js
 RP11.js
 RP12.js
 RP13.js
+RP14.js
 ```
+
+RP6 validates the relationship between PII, U.S. persons, and the dedicated U.S.-person PII question:
+
+- Inputs: `CSIR-Data`, `CSIR-PersonStatus`, and `CSIR-Data-PII-USPerson`.
+- If `CSIR-Data` includes `Personally Identifiable Information / Personal Information (IPSM 2.2.9)` and `CSIR-PersonStatus` includes `U.S. Persons`, `CSIR-Data-PII-USPerson` must be `Yes`.
+- If either prerequisite selection is absent, RP6 returns `NA`.
+- If both prerequisites are present and the dedicated answer is not `Yes`, RP6 returns `FAIL`.
 
 Each checkpoint exports one object with this shape:
 
 ```js
-const RP99 = {
-    id: "RP99",
+const RP109 = {
+    id: "RP109",
     name: "Human-readable checkpoint name",
     category: "Checkpoint category",
     requiredQuestions: [
@@ -707,7 +715,7 @@ const RP99 = {
     }
 };
 
-export default RP99;
+export default RP109;
 ```
 
 ### Context Available to Checkpoints
@@ -924,7 +932,7 @@ Useful helpers in `checkpoints/helpers.js`:
        RP2,
        RP3,
        // ...
-       RP13,
+       RP14,
        RP14
    ];
    ```

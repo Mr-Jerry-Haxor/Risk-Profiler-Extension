@@ -52,6 +52,8 @@ let reviewStartedAt = null;
 
 const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
 
+const DEFAULT_PLUGIN_LAYOUT = "side-pane";
+
 async function configurePluginLayout(
     requestedMode
 ) {
@@ -96,7 +98,8 @@ async function restorePluginLayout() {
         );
 
     return configurePluginLayout(
-        stored[PLUGIN_LAYOUT_STORAGE_KEY]
+        stored[PLUGIN_LAYOUT_STORAGE_KEY] ||
+        DEFAULT_PLUGIN_LAYOUT
     );
 }
 
@@ -707,6 +710,67 @@ function isLoginRedirect(
         );
 }
 
+async function ensurePrerequisiteTab(
+    check,
+    forceNew = false
+) {
+
+    const openUrl =
+        check.openUrl ||
+        check.url;
+
+    if (
+        !forceNew
+    ) {
+
+        const tabs =
+            await chrome.tabs.query({
+                url:
+                    `${openUrl}*`
+            });
+
+        if (
+            tabs.some(
+                tab =>
+                    tab.id
+            )
+        ) {
+
+            return false;
+        }
+    }
+
+    await chrome.tabs.create({
+        url:
+            openUrl
+    });
+
+    return true;
+}
+
+async function tryEnsurePrerequisiteTab(
+    check,
+    forceNew = false
+) {
+
+    try {
+
+        return await ensurePrerequisiteTab(
+            check,
+            forceNew
+        );
+
+    } catch (error) {
+
+        console.warn(
+            `Unable to open ${check.name} prerequisite tab:`,
+            error
+        );
+
+        return false;
+    }
+}
+
 async function checkPrerequisite(
     check
 ) {
@@ -746,6 +810,18 @@ async function checkPrerequisite(
             !unauthorized &&
             response.status < 500;
 
+        const openedTab =
+            check.id === "esats"
+                ? await tryEnsurePrerequisiteTab(
+                    check,
+                    !passed &&
+                    (
+                        redirectedToLogin ||
+                        unauthorized
+                    )
+                )
+                : false;
+
         return {
 
             id:
@@ -761,15 +837,24 @@ async function checkPrerequisite(
 
             finalUrl,
 
+            openedTab,
+
             message:
                 passed
                     ? `${check.name} session is active`
                     : redirectedToLogin
-                        ? `${check.name} redirected to sign-on`
-                        : `${check.name} returned HTTP ${response.status}`
+                        ? `${check.name} redirected to sign-on${openedTab ? "; opened ESATS in a new tab" : ""}`
+                        : `${check.name} returned HTTP ${response.status}${openedTab ? "; opened ESATS in a new tab" : ""}`
         };
 
     } catch (error) {
+
+        const openedTab =
+            check.id === "esats"
+                ? await tryEnsurePrerequisiteTab(
+                    check
+                )
+                : false;
 
         return {
 
@@ -788,8 +873,10 @@ async function checkPrerequisite(
             finalUrl:
                 check.url,
 
+            openedTab,
+
             message:
-                error.message
+                `${error.message}${openedTab ? "; opened ESATS in a new tab" : ""}`
         };
     }
 }

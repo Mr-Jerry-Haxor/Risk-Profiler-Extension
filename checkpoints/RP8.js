@@ -1,210 +1,97 @@
 import {
     fail,
-    getValues,
     hasAnswer,
     includesValue,
-    normalize,
+    isYes,
     notApplicable,
-    valueContainsAny,
-    pass
+    pass,
+    valueContainsAny
 }
 from "./helpers.js";
 
-const EXTERNAL_HOSTS = [
-    "External (Non-Boeing) / External Boeing Cloud Hosted",
-    "External(Non-Boeing) / External Boeing Cloud Hosted",
-    "Third Party Vendor (e.g. SaaS/IaaS/PaaS)"
-];
-
-const INTERNAL_HOSTS = [
-    "Boeing Enterprise Network (BEN)",
-    "Boeing Perimeter",
-    "Internal Boeing Cloud Hosted",
-    "Internal Boeing Cloud Hosted Boeing Enterprise Network (BEN)",
-    "Non-Cloud Boeing Enterprise Network (BEN)",
-    "Isolated Lab Environment",
-    "Secure Access Zone",
-    "Secure Hosting Environment (SHE)",
-    "Secure Lab Environment"
-];
-
 const RP8 = {
     id: "RP8",
-    name: "Hosting selection matches internal/external/hybrid architecture",
-    category: "Network and Hosting",
+    name: "Export Controlled = Yes has EAR/ITAR data type selected",
+    category: "Information Types",
     requiredQuestions: [
-    "CSIR-Hosting",
-    "CSIR-IntExtApp"
+    "CSIR-ExportControlled",
+    "CSIR-ExportControlled-Jurisdiction",
+    "CSIR-USEC-EAR-NLR",
+    "CSIR-USEC-EAR-LR",
+    "CSIR-USEC-ITAR"
     ],
 
     async validate(context) {
 
-        const hosting =
-            getValues(
-                context,
-                "CSIR-Hosting"
-            );
+    const exportControlled =
+        isYes(
+            context,
+            "CSIR-ExportControlled"
+        );
 
-        if (
-            hosting.length === 0
-        ) {
-
-            return notApplicable(
-                this.id,
-                "CSIR-Hosting is not answered."
-            );
-        }
-
-        const hasNoneOrOther =
-            hosting.some(
-                value =>
-                    [
-                        "none",
-                        "other"
-                    ].includes(
-                        normalize(
-                            value
-                        )
-                    )
-            );
-
-        if (
-            hasNoneOrOther
-        ) {
-
-            return notApplicable(
-                this.id,
-                "Hosting is None or Other."
-            );
-        }
-
-        // Case 1: CSIR-IntExtApp question is not present in the assessment at all — not applicable
-        if (
-            !hasAnswer(
-                context,
-                "CSIR-IntExtApp"
-            )
-        ) {
-
-            return notApplicable(
-                this.id,
-                "CSIR-Hosting is answered but CSIR-IntExtApp question was not found in this assessment."
-            );
-        }
-
-        const hasExternalHosting =
-            hosting.some(
-                value =>
-                    EXTERNAL_HOSTS.some(
-                        host =>
-                            normalize(value) ===
-                            normalize(host)
-                    )
-            );
-
-        const hasExternalAppType =
-            valueContainsAny(
-                context,
-                "CSIR-AppType",
-                [
-                    "Software-as-a-Service",
-                    "SaaS",
-                    "Infrastructure-as-a-Service",
-                    "IaaS",
-                    "Platform-as-a-Service",
-                    "PaaS"
-                ]
-            );
-
-        const hasExternal =
-            hasExternalHosting ||
-            hasExternalAppType;
-
-        
-        const hasInternal =
-            hosting.some(
-                value =>
-                    INTERNAL_HOSTS.some(
-                        host =>
-                            normalize(
-                                value
-                            ) ===
-                            normalize(
-                                host
-                            )
-                    )
-            );
-
-        // New requirement: If CSIR-IntExtApp is Hybrid, pass if hosting is either Internal or External
-        const isHybrid = includesValue(context, "CSIR-IntExtApp", "Hybrid");
-        if (isHybrid && (hasExternalHosting || hasInternal)) {
-            return pass(this.id, "Hybrid architecture identified with valid hosting selection.");
-        }
-
-
-        if (
-            hasExternal &&
-            hasInternal
-        ) {
-
-            return includesValue(
-                context,
-                "CSIR-IntExtApp",
-                "Hybrid"
-            )
-                ? pass(
-                    this.id,
-                    "Internal and external hosting selections match Hybrid architecture."
+    const hasRequiredType =
+        [
+            "CSIR-USEC-EAR-NLR",
+            "CSIR-USEC-EAR-LR",
+            "CSIR-USEC-ITAR"
+        ].some(
+            questionId =>
+                isYes(
+                    context,
+                    questionId
                 )
-                : fail(
-                    this.id,
-                    "Internal and external hosting selections require CSIR-IntExtApp = Hybrid."
-                );
-        }
+        );
 
-        if (
-            hasExternal
-        ) {
+    if (
+        !exportControlled &&
+        hasRequiredType
+    ) {
 
-            return includesValue(
-                context,
-                "CSIR-IntExtApp",
-                "External"
-            )
-                ? pass(
-                    this.id,
-                    "External hosting matches External architecture."
-                )
-                : fail(
-                    this.id,
-                    "External hosting requires CSIR-IntExtApp = External."
-                );
-        }
+        return fail(
+            this.id,
+            "EAR/ITAR data types are selected, but CSIR-ExportControlled is No."
+        );
+    }
 
-        if (
-            hasInternal
-        ) {
-
-            return includesValue(
-                context,
-                "CSIR-IntExtApp",
-                "Internal"
-            )
-                ? pass(
-                    this.id,
-                    "Internal hosting matches Internal architecture."
-                )
-                : fail(
-                    this.id,
-                    "Internal hosting requires CSIR-IntExtApp = Internal."
-                );
-        }
+    if (
+        !exportControlled
+    ) {
 
         return notApplicable(
             this.id,
-            "Hosting answer did not match an internal or external mapping."
+            "CSIR-ExportControlled is not Yes."
         );
     }
+
+    const jurisdictionIsOther =
+        valueContainsAny(
+            context,
+            "CSIR-ExportControlled-Jurisdiction",
+            [
+                "other"
+            ]
+        );
+
+    if (
+        jurisdictionIsOther
+    ) {
+
+        return notApplicable(
+            this.id,
+            "CSIR-ExportControlled is Yes but jurisdiction is Other — EAR/ITAR check does not apply."
+        );
+    }
+
+    return hasRequiredType
+        ? pass(
+            this.id,
+            "Export Controlled is Yes and at least one EAR-NLR, EAR-LR, or ITAR type is Yes."
+        )
+        : fail(
+            this.id,
+            "Export Controlled is Yes, but none of EAR-NLR, EAR-LR, or ITAR are selected as Yes."
+        );
+}
 };
 
 export default RP8;

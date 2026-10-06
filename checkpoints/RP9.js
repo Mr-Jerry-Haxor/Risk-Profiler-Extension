@@ -1,134 +1,208 @@
 import {
     fail,
     getValues,
+    hasAnswer,
+    includesValue,
     normalize,
     notApplicable,
+    valueContainsAny,
     pass
 }
 from "./helpers.js";
 
-const PERSON_CLASS_MAP = [
-    [
-        "Boeing employees",
-        "Boeing Employees"
-    ],
-    [
-        "Boeing Customers",
-        "Boeing Customers"
-    ],
-    [
-        "Boeing Suppliers",
-        "Boeing Suppliers"
-    ],
-    [
-        "Boeing subsidiaries",
-        "Boeing Subsidiary"
-    ],
-    [
-        "Non-Boeing (Contract Labor)",
-        "Non-Boeing (Contract Labor)"
-    ],
-    [
-        "Non-Boeing (Consultants/Professional Services)",
-        "Non-Boeing (Consultants/Professional Services)"
-    ],
-    [
-        "Non-Boeing (Industry Assist)",
-        "Non-Boeing (Industry Assist)"
-    ],
-    [
-        "Non-Boeing (Purchased Services/Contingent Labor)",
-        "Non-Boeing (Purchased Services/Contingent Labor)"
-    ]
+const EXTERNAL_HOSTS = [
+    "External (Non-Boeing) / External Boeing Cloud Hosted",
+    "External(Non-Boeing) / External Boeing Cloud Hosted",
+    "Third Party Vendor (e.g. SaaS/IaaS/PaaS)"
+];
+
+const INTERNAL_HOSTS = [
+    "Boeing Enterprise Network (BEN)",
+    "Boeing Perimeter",
+    "Internal Boeing Cloud Hosted",
+    "Internal Boeing Cloud Hosted Boeing Enterprise Network (BEN)",
+    "Non-Cloud Boeing Enterprise Network (BEN)",
+    "Isolated Lab Environment",
+    "Secure Access Zone",
+    "Secure Hosting Environment (SHE)",
+    "Secure Lab Environment"
 ];
 
 const RP9 = {
     id: "RP9",
-    name: "Developer person classifications are represented in person class",
-    category: "Users",
+    name: "Hosting selection matches internal/external/hybrid architecture",
+    category: "Network and Hosting",
     requiredQuestions: [
-    "CSIR-DevPersonClassification",
-    "CSIR-PersonClass"
+    "CSIR-Hosting",
+    "CSIR-IntExtApp"
     ],
 
     async validate(context) {
 
-        const developerTypes =
+        const hosting =
             getValues(
                 context,
-                "CSIR-DevPersonClassification"
-            ).filter(
-                value =>
-                    normalize(
-                        value
-                    ) !== "none"
+                "CSIR-Hosting"
             );
 
         if (
-            developerTypes.length === 0
+            hosting.length === 0
         ) {
 
             return notApplicable(
                 this.id,
-                "CSIR-DevPersonClassification is None or not answered."
+                "CSIR-Hosting is not answered."
             );
         }
 
-        const personClasses =
-            getValues(
-                context,
-                "CSIR-PersonClass"
-            ).map(
-                normalize
-            );
-
-        const missing =
-            developerTypes
-                .map(value => {
-
-                    const mapping =
-                        PERSON_CLASS_MAP.find(
-                            ([source]) =>
-                                normalize(
-                                    source
-                                ) ===
-                                normalize(
-                                    value
-                                )
-                        );
-
-                    return mapping
-                        ? {
-                            source:
-                                value,
-                            required:
-                                mapping[1]
-                        }
-                        : null;
-                })
-                .filter(Boolean)
-                .filter(
-                    mapping =>
-                        !personClasses.includes(
-                            normalize(
-                                mapping.required
-                            )
+        const hasNoneOrOther =
+            hosting.some(
+                value =>
+                    [
+                        "none",
+                        "other"
+                    ].includes(
+                        normalize(
+                            value
                         )
-                );
+                    )
+            );
 
         if (
-            missing.length
+            hasNoneOrOther
         ) {
 
-            return fail(
+            return notApplicable(
                 this.id,
-                `Missing CSIR-PersonClass selection(s): ${missing.map(item => item.required).join(", ")}.`
+                "Hosting is None or Other."
             );
         }
 
-        return pass(
+        // Case 1: CSIR-IntExtApp question is not present in the assessment at all — not applicable
+        if (
+            !hasAnswer(
+                context,
+                "CSIR-IntExtApp"
+            )
+        ) {
+
+            return notApplicable(
+                this.id,
+                "CSIR-Hosting is answered but CSIR-IntExtApp question was not found in this assessment."
+            );
+        }
+
+        const hasExternalHosting =
+            hosting.some(
+                value =>
+                    EXTERNAL_HOSTS.some(
+                        host =>
+                            normalize(value) ===
+                            normalize(host)
+                    )
+            );
+
+        const hasExternalAppType =
+            valueContainsAny(
+                context,
+                "CSIR-AppType",
+                [
+                    "Software-as-a-Service",
+                    "SaaS",
+                    "Infrastructure-as-a-Service",
+                    "IaaS",
+                    "Platform-as-a-Service",
+                    "PaaS"
+                ]
+            );
+
+        const hasExternal =
+            hasExternalHosting ||
+            hasExternalAppType;
+
+        
+        const hasInternal =
+            hosting.some(
+                value =>
+                    INTERNAL_HOSTS.some(
+                        host =>
+                            normalize(
+                                value
+                            ) ===
+                            normalize(
+                                host
+                            )
+                    )
+            );
+
+        // New requirement: If CSIR-IntExtApp is Hybrid, pass if hosting is either Internal or External
+        const isHybrid = includesValue(context, "CSIR-IntExtApp", "Hybrid");
+        if (isHybrid && (hasExternalHosting || hasInternal)) {
+            return pass(this.id, "Hybrid architecture identified with valid hosting selection.");
+        }
+
+
+        if (
+            hasExternal &&
+            hasInternal
+        ) {
+
+            return includesValue(
+                context,
+                "CSIR-IntExtApp",
+                "Hybrid"
+            )
+                ? pass(
+                    this.id,
+                    "Internal and external hosting selections match Hybrid architecture."
+                )
+                : fail(
+                    this.id,
+                    "Internal and external hosting selections require CSIR-IntExtApp = Hybrid."
+                );
+        }
+
+        if (
+            hasExternal
+        ) {
+
+            return includesValue(
+                context,
+                "CSIR-IntExtApp",
+                "External"
+            )
+                ? pass(
+                    this.id,
+                    "External hosting matches External architecture."
+                )
+                : fail(
+                    this.id,
+                    "External hosting requires CSIR-IntExtApp = External."
+                );
+        }
+
+        if (
+            hasInternal
+        ) {
+
+            return includesValue(
+                context,
+                "CSIR-IntExtApp",
+                "Internal"
+            )
+                ? pass(
+                    this.id,
+                    "Internal hosting matches Internal architecture."
+                )
+                : fail(
+                    this.id,
+                    "Internal hosting requires CSIR-IntExtApp = Internal."
+                );
+        }
+
+        return notApplicable(
             this.id,
-            "All developer person classifications with corresponding person classes are represented."
+            "Hosting answer did not match an internal or external mapping."
         );
     }
 };

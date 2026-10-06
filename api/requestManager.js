@@ -14,6 +14,8 @@ const DEFAULT_OPTIONS = {
     useCache: true
 };
 
+let trustedTabCreation = null;
+
 
 
 function isObject(value) {
@@ -87,6 +89,40 @@ function queryTabs(queryInfo) {
     });
 }
 
+function createTab(
+    createProperties
+) {
+
+    return new Promise((resolve, reject) => {
+
+        chrome.tabs.create(
+            createProperties,
+            tab => {
+
+                const error =
+                    chrome.runtime.lastError;
+
+                if (
+                    error
+                ) {
+
+                    reject(
+                        new Error(
+                            error.message
+                        )
+                    );
+
+                    return;
+                }
+
+                resolve(
+                    tab
+                );
+            }
+        );
+    });
+}
+
 async function findTrustedPageTab(pageOrigin) {
 
     const tabs =
@@ -95,15 +131,55 @@ async function findTrustedPageTab(pageOrigin) {
                 `${pageOrigin}/*`
         });
 
-    return tabs.find(
+    const existingTab =
+        tabs.find(
         tab =>
             tab.id &&
             tab.status === "complete"
-    ) ||
+        ) ||
         tabs.find(
             tab =>
                 tab.id
         );
+
+    if (
+        existingTab
+    ) {
+
+        return {
+            tab:
+                existingTab,
+            opened:
+                false
+        };
+    }
+
+    if (
+        !trustedTabCreation
+    ) {
+
+        trustedTabCreation =
+            createTab({
+                url:
+                    `${pageOrigin}/`
+            })
+                .finally(
+                    () => {
+                        trustedTabCreation =
+                            null;
+                    }
+                );
+    }
+
+    const openedTab =
+        await trustedTabCreation;
+
+    return {
+        tab:
+            openedTab,
+        opened:
+            true
+    };
 }
 
 function executeScript(details) {
@@ -153,17 +229,22 @@ async function fetchFromTrustedPage(
         );
     }
 
-    const tab =
+    const trustedPage =
         await findTrustedPageTab(
             pageOrigin
         );
 
-    if (!tab) {
+    if (
+        trustedPage.opened
+    ) {
 
         throw new Error(
-            `Open ${label} in this browser and sign in before running ${label} validation requests.`
+            `No ${label} tab was open. Opened ${pageOrigin}/ in a new tab; sign in, then retry.`
         );
     }
+
+    const tab =
+        trustedPage.tab;
 
     const results =
         await executeScript({

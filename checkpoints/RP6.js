@@ -1,289 +1,73 @@
 import {
     fail,
-    getValues,
-    isSaas,
-    normalize,
+    includesValue,
     notApplicable,
-    pass
+    pass,
+    valueContainsAny
 }
 from "./helpers.js";
 
 const RP6 = {
     id: "RP6",
-
-    name: "Code classification matches Export Control reference",
-
+    name: "US-person PII data has the required answer",
     category: "Information Types",
-
     requiredQuestions: [
-        "CSIR-CodeClassification"
+    "CSIR-Data",
+    "CSIR-PersonStatus",
+    "CSIR-Data-PII-USPerson"
     ],
 
     async validate(context) {
 
-        const selectedClassifications =
-            getValues(
+        const containsPII =
+            valueContainsAny(
                 context,
-                "CSIR-CodeClassification"
+                "CSIR-Data",
+                [
+                    "Personally Identifiable Information / Personal Information (IPSM 2.2.9)",
+                    "Personally Identifiable Information",
+                    "Personal Information",
+                    "IPSM 2.2.9"
+                ]
+            );
+
+        const includesUSPersons =
+            includesValue(
+                context,
+                "CSIR-PersonStatus",
+                "U.S. Persons"
+            ) ||
+            includesValue(
+                context,
+                "CSIR-PersonStatus",
+                "US Persons"
             );
 
         if (
-            selectedClassifications.length === 0
-        ) {
-
-            return fail(
-                this.id,
-                "CSIR-CodeClassification is not answered."
-            );
-        }
-
-        const selectedCodes =
-            selectedClassifications
-                .map(
-                    classificationCode
-                )
-                .filter(Boolean);
-
-        if (
-            selectedCodes.length === 0
-        ) {
-
-            return fail(
-                this.id,
-                `Unable to determine classification from answer: ${selectedClassifications.join(", ")}.`
-            );
-        }
-
-
-        const referenceCode =
-            extractReferenceClassification(
-                context?.exportControl
-            );
-
-        
-
-        /*
-         * SaaS applications must be
-         * Not Subject to Export Controls OR 
-         * match the Export Control reference
-         */
-        if (isSaas(context)) {
-            const isCompliant = selectedCodes.includes("NOT_SUBJECT") || 
-                                (referenceCode && selectedCodes.includes(referenceCode));
-
-            return isCompliant
-                ? pass(this.id, "Application is SaaS and classification is valid based on Export Control reference.")
-                : fail(this.id, `Application is SaaS, but selected classification (${selectedClassifications.join(", ")}) does not match required criteria.`);
-        }
-
-        
-
-        if (
-            !referenceCode
+            !containsPII ||
+            !includesUSPersons
         ) {
 
             return notApplicable(
                 this.id,
-                "Unable to determine Export Control classification from GTC."
+                "CSIR-Data does not include PII or CSIR-PersonStatus does not include U.S. Persons."
             );
         }
 
-        const matches =
-            selectedCodes.includes(
-                referenceCode
-            );
-
-        return matches
+        return includesValue(
+            context,
+            "CSIR-Data-PII-USPerson",
+            "Yes"
+        )
             ? pass(
                 this.id,
-                `Selected classification matches Export Control reference (${referenceCode}).`
+                "PII is associated with U.S. Persons and CSIR-Data-PII-USPerson is Yes."
             )
             : fail(
                 this.id,
-                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control reference (${referenceCode}).`
+                "PII is associated with U.S. Persons, so CSIR-Data-PII-USPerson must be Yes."
             );
     }
 };
-
-function classificationCode(
-    value
-) {
-
-    const normalized =
-        normalize(
-            value
-        );
-
-    if (
-        normalized.includes(
-            "not subject"
-        )
-    ) {
-        return "NOT_SUBJECT";
-    }
-
-    if (
-        normalized.includes(
-            "ear-nlr"
-        ) ||
-        normalized.includes(
-            "ear or ear-nlr"
-        )
-    ) {
-        return "EAR_NLR";
-    }
-
-    if (
-        normalized.includes(
-            "ear-lr"
-        )
-    ) {
-        return "EAR_LR";
-    }
-
-    if (
-        normalized.includes(
-            "itar"
-        )
-    ) {
-        return "ITAR";
-    }
-
-    return null;
-}
-
-function extractReferenceClassification(
-    exportControl
-) {
-
-    const record =
-        exportControl?.[0];
-
-    const term =
-        record?.terms?.[0]?.term;
-
-    if (
-        !term
-    ) {
-        return null;
-    }
-
-    /*
-     * Primary source:
-     * Export Control Group
-     *
-     * EARL
-     * EARN
-     * ITAR
-     */
-    const exportControlGroup =
-        (term?.associated || [])
-            .flatMap(
-                association =>
-                    association?.fields || []
-            )
-            .map(
-                field =>
-                    field?.field?.name
-            )
-            .find(
-                value =>
-                    [
-                        "EARL",
-                        "EARN",
-                        "ITAR"
-                    ].includes(
-                        String(
-                            value || ""
-                        ).toUpperCase()
-                    )
-            );
-
-    if (
-        exportControlGroup
-    ) {
-
-        return mapExportControlClassification(
-            exportControlGroup
-        );
-    }
-
-    /*
-     * NSR
-     */
-    const displayName =
-        term?.displayName;
-
-    if (
-        normalize(
-            displayName
-        ) === "nsr"
-    ) {
-
-        return "NOT_SUBJECT";
-    }
-
-    /*
-     * Export Control Group Full Name
-     *
-     * Not Subject to EAR or ITAR
-     */
-    const equivalenceText =
-        (term?.equivalence || [])
-            .flatMap(
-                item =>
-                    item?.fields || []
-            )
-            .map(
-                field =>
-                    field?.field?.name || ""
-            )
-            .join(
-                " "
-            );
-
-    if (
-        normalize(
-            equivalenceText
-        ).includes(
-            "not subject"
-        )
-    ) {
-
-        return "NOT_SUBJECT";
-    }
-
-    return null;
-}
-
-function mapExportControlClassification(
-    value
-) {
-
-    const normalized =
-        normalize(
-            value
-        );
-
-    if (
-        normalized === "earl"
-    ) {
-        return "EAR_LR";
-    }
-
-    if (
-        normalized === "earn"
-    ) {
-        return "EAR_NLR";
-    }
-
-    if (
-        normalized === "itar"
-    ) {
-        return "ITAR";
-    }
-
-    return null;
-}
 
 export default RP6;

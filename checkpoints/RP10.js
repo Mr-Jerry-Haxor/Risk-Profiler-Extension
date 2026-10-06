@@ -1,97 +1,134 @@
 import {
     fail,
-    includesValue,
-    isYes,
+    getValues,
+    normalize,
     notApplicable,
-    pass,
-    valueContainsAny
+    pass
 }
 from "./helpers.js";
 
+const PERSON_CLASS_MAP = [
+    [
+        "Boeing employees",
+        "Boeing Employees"
+    ],
+    [
+        "Boeing Customers",
+        "Boeing Customers"
+    ],
+    [
+        "Boeing Suppliers",
+        "Boeing Suppliers"
+    ],
+    [
+        "Boeing subsidiaries",
+        "Boeing Subsidiary"
+    ],
+    [
+        "Non-Boeing (Contract Labor)",
+        "Non-Boeing (Contract Labor)"
+    ],
+    [
+        "Non-Boeing (Consultants/Professional Services)",
+        "Non-Boeing (Consultants/Professional Services)"
+    ],
+    [
+        "Non-Boeing (Industry Assist)",
+        "Non-Boeing (Industry Assist)"
+    ],
+    [
+        "Non-Boeing (Purchased Services/Contingent Labor)",
+        "Non-Boeing (Purchased Services/Contingent Labor)"
+    ]
+];
+
 const RP10 = {
     id: "RP10",
-    name: "Applications requiring service accounts answer Yes",
+    name: "Developer person classifications are represented in person class",
     category: "Users",
     requiredQuestions: [
-    "CSIR-AppType",
-    "CSIR-SvcAcct"
+    "CSIR-DevPersonClassification",
+    "CSIR-PersonClass"
     ],
 
     async validate(context) {
 
-        const databaseUsed =
-            isYes(
+        const developerTypes =
+            getValues(
                 context,
-                "CSIR-Database"
-            );
-
-        const serviceAccountExpected =
-            databaseUsed ||
-
-            valueContainsAny(
-                context,
-                "CSIR-AppType",
-                [
-                    "Web application",
-                    "Web service",
-                    "API",
-                    "Client-Server",
-                    "Dashboard / BI",
-                    "PowerBI",
-                    "Cognos",
-                    "Tableau",
-                    "Database / Data Warehouse",
-                    "Data Mart",
-                    "Analytics platform"
-                ]
+                "CSIR-DevPersonClassification"
+            ).filter(
+                value =>
+                    normalize(
+                        value
+                    ) !== "none"
             );
 
         if (
-            !serviceAccountExpected
+            developerTypes.length === 0
         ) {
 
             return notApplicable(
                 this.id,
-                "Application characteristics do not indicate required service account usage."
+                "CSIR-DevPersonClassification is None or not answered."
             );
         }
 
-        if (
-            isYes(
+        const personClasses =
+            getValues(
                 context,
-                "CSIR-SvcAcct"
-            )
-        ) {
-
-            return pass(
-                this.id,
-                databaseUsed
-                    ? "Database usage is present and service accounts are identified."
-                    : "Application type indicates service account usage and CSIR-SvcAcct is Yes."
+                "CSIR-PersonClass"
+            ).map(
+                normalize
             );
-        }
+
+        const missing =
+            developerTypes
+                .map(value => {
+
+                    const mapping =
+                        PERSON_CLASS_MAP.find(
+                            ([source]) =>
+                                normalize(
+                                    source
+                                ) ===
+                                normalize(
+                                    value
+                                )
+                        );
+
+                    return mapping
+                        ? {
+                            source:
+                                value,
+                            required:
+                                mapping[1]
+                        }
+                        : null;
+                })
+                .filter(Boolean)
+                .filter(
+                    mapping =>
+                        !personClasses.includes(
+                            normalize(
+                                mapping.required
+                            )
+                        )
+                );
 
         if (
-            includesValue(
-                context,
-                "CSIR-SvcAcct",
-                "No"
-            )
+            missing.length
         ) {
 
             return fail(
                 this.id,
-                databaseUsed
-                    ? "CSIR-Database is Yes, therefore service accounts are expected, but CSIR-SvcAcct is No."
-                    : "Application type indicates service account usage, but CSIR-SvcAcct is No."
+                `Missing CSIR-PersonClass selection(s): ${missing.map(item => item.required).join(", ")}.`
             );
         }
 
-        return fail(
+        return pass(
             this.id,
-            databaseUsed
-                ? "CSIR-Database is Yes, but CSIR-SvcAcct is not answered."
-                : "Application type indicates service account usage, but CSIR-SvcAcct is not answered."
+            "All developer person classifications with corresponding person classes are represented."
         );
     }
 };
