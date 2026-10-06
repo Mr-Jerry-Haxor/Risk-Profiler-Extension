@@ -21,11 +21,31 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "popup.html"
+      ],
+      "matches": [
+        "https://cairois.web.boeing.com/*"
+      ]
+    },
+    {
+      "resources": [
         "assets/RP_Checklist_2.6.1_encoded.txt"
       ],
       "matches": [
         "<all_urls>"
       ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://cairois.web.boeing.com/*"
+      ],
+      "js": [
+        "cairoSurvey.bundle.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "background": {

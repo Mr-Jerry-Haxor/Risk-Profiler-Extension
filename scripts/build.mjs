@@ -89,6 +89,18 @@ async function bundleScripts() {
     });
 }
 
+async function bundleCairoContentScript() {
+    await build({
+        entryPoints: [resolveFromRoot("content", "cairoSurvey.js")],
+        outfile: resolveFromDist("cairoSurvey.bundle.js"),
+        bundle: true,
+        minify: true,
+        legalComments: "none",
+        target: "chrome120",
+        format: "iife"
+    });
+}
+
 async function copyStaticFiles() {
     const css =
         await readFile(
@@ -196,6 +208,11 @@ async function writeManifest() {
             "module"
     };
 
+    manifest.content_scripts = manifest.content_scripts.map(script => ({
+        ...script,
+        js: script.js.map(file => file === "content/cairoSurvey.js" ? "cairoSurvey.bundle.js" : file)
+    }));
+
     await writeFile(
         resolveFromDist("manifest.json"),
         `${JSON.stringify(manifest, null, 2)}\n`,
@@ -206,6 +223,7 @@ async function writeManifest() {
 async function main() {
     await cleanDist();
     await bundleScripts();
+    await bundleCairoContentScript();
     await copyStaticFiles();
     await writePopupHtml();
     await writeManifest();

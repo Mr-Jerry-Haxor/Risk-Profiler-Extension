@@ -6,6 +6,16 @@ Risk Profiler Review and Validate Automation is a Microsoft Edge Manifest V3 ext
 
 The extension is designed for business users who need consistent review output and for technical teams who need traceable, repeatable, Edge-based automation across Cairo, ESATS, and GTC data sources.
 
+## Cairo survey-page integration
+
+On `https://cairois.web.boeing.com/Assessments/{incompleteAssessmentId}/Survey/{surveyTemplateId}`, the extension adds **Plugin - Validate** and **Plugin - Review** immediately before **View Survey Outline**. Buttons appear only for survey template IDs in the same `rp-app` template list used by What's New, including historical templates. Other Cairo routes and survey types are unchanged.
+
+Each click verifies the incomplete assessment against the primary assessment list and checks its actual survey template ID before using the existing background validation/review engines. A modal on Cairo shows progress and results even when the extension popup/side pane is closed. Closing the modal does not cancel processing; the normal plugin also retains the results. Missing sessions use the existing sign-in tab and retry workflow.
+
+Validation includes **Export Excel**. Review includes the existing review basis, question selection, ASA Notes, Word download, and **Send Email**. Email requires ASA Mode and a configured email template in the plugin's layout settings, as it does in the regular plugin. Result snapshots are isolated per run and retained in extension session storage (up to ten views); reloading the extension expires them. Only one Cairo job can start at a time, and it cannot overlap a running popup job.
+
+After rebuilding, reload the extension from `dist/` and refresh existing Cairo tabs to install the content script. Use `npm test` for the integration regression checks. Live Cairo/WSSO sign-in and site-specific frame/clipboard policies require verification in a signed-in Edge session.
+
 ## Business Purpose
 
 Risk Profiler assessment review requires users to compare completed or incomplete assessments against current survey templates, inspect unanswered reachable questions, validate required checkpoints, collect application context, and prepare notes for follow-up. This extension reduces manual work by automating the repetitive parts of that process.

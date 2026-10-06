@@ -97,6 +97,9 @@ const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
 
 const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
+const cairoView = new URLSearchParams(location.search).get("view") === "cairo";
+const cairoJobId = new URLSearchParams(location.search).get("job");
+
 /*
 ====================================================
 DOM HELPERS
@@ -118,6 +121,11 @@ document.addEventListener(
 );
 
 async function initialize() {
+
+    if (cairoView) {
+        await initializeCairoView();
+        return;
+    }
 
     document.body.classList.toggle(
         "side-pane",
@@ -145,6 +153,65 @@ async function initialize() {
     loadExistingResults();
 
     setupSurveyDiffUI();
+}
+
+async function initializeCairoView() {
+    document.body.classList.add("cairo-embedded", "side-pane");
+    // Keep the same result/notes components and handlers, without starting a second job.
+    await loadAsaSettings();
+    await loadReviewQuestionNotes();
+    await loadReviewModeSetting();
+    attachEvents();
+    $("progressContainer").classList.remove("hidden");
+    $("progressText").textContent = "Loading Cairo assessment…";
+    let complete = false;
+    let polling = false;
+    const poll = async () => {
+        if (polling || complete) return;
+        polling = true;
+        try {
+            const response = await chrome.runtime.sendMessage({ action: "GET_CAIRO_JOB", jobId: cairoJobId });
+            if (!response?.success) throw new Error(response?.error || "Unable to load the assessment job.");
+            const job = response.job;
+            activateResultsTab(job.mode);
+            if (job.progress) renderProgress(job.progress, job.mode);
+            else $("progressText").textContent = "Finding this assessment in the primary list and verifying its survey template…";
+            if (job.state === "error") throw new Error(job.error || "Assessment processing failed.");
+            if (job.state !== "complete") return;
+            complete = true;
+            if (job.mode === "validation") {
+                validationResults = job.results || [];
+                renderResults(validationResults);
+                $("exportBtn").classList.toggle("hidden", validationResults.length === 0);
+            } else {
+                reviewResults = job.results || [];
+                renderReviewResults(reviewResults);
+                openReviewNotesModal(job.route.assessmentId);
+                const email = $("cairoReviewEmailBtn");
+                email.classList.remove("hidden");
+                email.disabled = !canSendReviewEmail();
+                email.title = email.disabled ? "Configure ASA Mode and the email template in the plugin's layout settings to enable email." : "Prepare the configured review email";
+                email.addEventListener("click", () => openReviewEmail(job.route.assessmentId));
+            }
+            activateResultsTab(job.mode);
+        } catch (error) {
+            complete = true;
+            $("progressText").textContent = error.message;
+            $("progressText").setAttribute("role", "alert");
+        } finally {
+            polling = false;
+        }
+    };
+    await poll();
+    const timer = setInterval(async () => {
+        await poll();
+        if (complete) clearInterval(timer);
+    }, 1000);
+}
+
+function canSendReviewEmail() {
+    return ASA_MODE && asaSettings.enabled && asaSettings.emailTemplateEnabled &&
+        Boolean(asaSettings.emailTemplateHtml.replace(/<[^>]*>/g, "").trim());
 }
 
 /*

@@ -21,6 +21,20 @@
     --border: #e8edf5;
 }
 
+/* Cairo uses the existing result UI inside an origin-restricted extension frame. */
+body.cairo-embedded { width: 100%; min-width: 0; }
+.cairo-embedded .app > .header,
+.cairo-embedded .app > section:nth-of-type(-n+3),
+.cairo-embedded .run-actions,
+.cairo-embedded .result-tabs,
+.cairo-embedded #clearResultsBtn,
+.cairo-embedded #clearReviewResultsBtn,
+.cairo-embedded #retryFailedBtn,
+.cairo-embedded #closeReviewNotesModalBtn { display: none !important; }
+.cairo-embedded #reviewNotesModal:not(.hidden) { position: static; display: block; background: transparent; padding: 0; }
+.cairo-embedded #reviewNotesModal .modal-content { width: 100%; max-width: none; max-height: none; margin: 0; }
+.cairo-embedded .review-output-actions { flex-wrap: wrap; }
+
 * {
     box-sizing: border-box;
 }

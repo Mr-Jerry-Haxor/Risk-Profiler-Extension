@@ -1,5 +1,7 @@
 import {
-    getAssessmentList
+    getAssessmentList,
+    getAssessmentDetail,
+    getRiskProfilerSurveyTemplates
 }
 from "./api/cairoApi.js";
 
@@ -27,6 +29,126 @@ import {
     PREREQUISITE_CHECKS
 }
 from "./utils/constants.js";
+
+import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
+
+let cairoJobRunning = false;
+let cairoTemplatesPromise = null;
+let cairoTemplatesUpdatedAt = 0;
+
+async function getCairoTemplates() {
+    if (!cairoTemplatesPromise || Date.now() - cairoTemplatesUpdatedAt > 60000) {
+        cairoTemplatesUpdatedAt = Date.now();
+        cairoTemplatesPromise = getRiskProfilerSurveyTemplates().then(async response => {
+            const templates = Array.isArray(response) ? response : response?.data;
+            if (!Array.isArray(templates)) throw new Error("Unable to load supported RiskProfiler survey templates.");
+            const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL) || {};
+            await setValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL, { ...state, templates, updatedAt: Date.now() });
+            return templates;
+        }).catch(async error => {
+            cairoTemplatesPromise = null;
+            const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL);
+            if (Array.isArray(state?.templates) && state.templates.length) return state.templates;
+            throw error;
+        });
+    }
+    return cairoTemplatesPromise;
+}
+
+function getCairoSenderRoute(sender) {
+    if (sender.id !== chrome.runtime.id || !sender.tab || sender.frameId !== 0) return null;
+    // Content scripts may outlive SPA navigation; require both sender and current tab routes.
+    return parseCairoSurveyUrl(sender.url);
+}
+
+async function writeCairoJob(job) {
+    await chrome.storage.session.set({ [`cairoJob:${job.jobId}`]: job });
+}
+
+async function processCairoJob(job) {
+    try {
+        const [assessments, detail] = await Promise.all([
+            refreshAssessments(), getAssessmentDetail(job.route.assessmentId)
+        ]);
+        const assessment = resolveCairoAssessment(job.route, assessments, detail);
+        const reviewMode = await getValue(CONFIG.STORAGE_KEYS.REVIEW_MODE);
+        const pending = job.mode === "review"
+            ? runReviewJob([assessment], { mode: reviewMode || "initial" })
+            : runValidationJob([assessment]);
+        job.state = "running";
+        job.runId = job.mode === "review" ? currentReviewId : currentValidationId;
+        job.assetName = assessment.assetName;
+        await writeCairoJob(job);
+        await pending;
+        const data = await chrome.storage.local.get([
+            `${job.mode}Results`, `${job.mode}Error`, `${job.mode}Progress`
+        ]);
+        job.progress = data[`${job.mode}Progress`];
+        job.error = data[`${job.mode}Error`] || null;
+        job.results = data[`${job.mode}Results`] || [];
+        job.state = job.error ? "error" : "complete";
+    } catch (error) {
+        job.state = "error";
+        job.error = error.message;
+    } finally {
+        try {
+            await writeCairoJob(job);
+        } finally {
+            cairoJobRunning = false;
+        }
+    }
+}
+
+async function handleCairoMessage(message, sender) {
+    if (message.action === "GET_CAIRO_JOB") {
+        if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL("popup.html") + "?view=cairo&")) {
+            throw new Error("This result view is not authorized.");
+        }
+        if (typeof message.jobId !== "string" || !/^[\da-f-]{36}$/.test(message.jobId)) throw new Error("Invalid result view.");
+        const key = `cairoJob:${message.jobId}`;
+        const job = (await chrome.storage.session.get(key))[key];
+        if (!job) throw new Error("This result view has expired. Close it and run the assessment again.");
+        if (["preparing", "running"].includes(job.state) && !cairoJobRunning) {
+            job.state = "error";
+            job.error = "The background worker restarted before this assessment finished. Close this view and run it again.";
+            await writeCairoJob(job);
+        }
+        if (job.state === "running") {
+            const data = await chrome.storage.local.get(`${job.mode}Progress`);
+            const progress = data[`${job.mode}Progress`];
+            if (progress?.runId === job.runId) job.progress = progress;
+        }
+        return { success: true, job };
+    }
+    const route = getCairoSenderRoute(sender);
+    if (!route) throw new Error("This action is only available on a Cairo survey page.");
+    const tab = await chrome.tabs.get(sender.tab.id);
+    const currentRoute = parseCairoSurveyUrl(tab.url);
+    if (!currentRoute || currentRoute.assessmentId !== route.assessmentId || currentRoute.surveyTemplateId !== route.surveyTemplateId) {
+        throw new Error("The Cairo page has changed. Please try again.");
+    }
+    const eligible = isSupportedCairoSurvey(route, await getCairoTemplates());
+    if (message.action === "CAIRO_SURVEY_ELIGIBILITY") return { success: true, eligible };
+    if (!eligible) throw new Error("This survey template is not supported by RiskProfiler.");
+    if (!["validation", "review"].includes(message.mode)) throw new Error("Invalid assessment action.");
+    if (cairoJobRunning || validationRunning || reviewRunning) throw new Error("Another assessment job is running. Wait for it to finish before starting this one.");
+    cairoJobRunning = true;
+    const job = { jobId: crypto.randomUUID(), route, mode: message.mode, state: "preparing", startedAt: Date.now() };
+    try {
+        // Keep session snapshots bounded; do not touch normal popup results.
+        const saved = await chrome.storage.session.get(null);
+        const oldJobs = Object.entries(saved).filter(([key]) => key.startsWith("cairoJob:"))
+            .sort((a, b) => (b[1].startedAt || 0) - (a[1].startedAt || 0));
+        const expired = oldJobs.filter(([, item], index) => index >= 9 || Date.now() - item.startedAt > 86400000);
+        if (expired.length) await chrome.storage.session.remove(expired.map(([key]) => key));
+        await writeCairoJob(job);
+    } catch (error) {
+        cairoJobRunning = false;
+        throw error;
+    }
+    processCairoJob(job).catch(console.error);
+    return { success: true, jobId: job.jobId };
+}
 
 /*
 ====================================================
@@ -1201,6 +1323,11 @@ chrome.runtime.onMessage.addListener(
 
                 try {
 
+                    if (["CAIRO_SURVEY_ELIGIBILITY", "START_CAIRO_JOB", "GET_CAIRO_JOB"].includes(message.action)) {
+                        sendResponse(await handleCairoMessage(message, sender));
+                        return;
+                    }
+
                     switch (
                         message.action
                     ) {
@@ -1222,6 +1349,8 @@ chrome.runtime.onMessage.addListener(
 
                         case "START_VALIDATION":
 
+                            if (cairoJobRunning) throw new Error("A Cairo assessment job is already running.");
+
                             runValidationJob(
 
                                 message.assessments
@@ -1242,6 +1371,8 @@ chrome.runtime.onMessage.addListener(
                             break;
 
                         case "START_REVIEW":
+
+                            if (cairoJobRunning) throw new Error("A Cairo assessment job is already running.");
 
                             runReviewJob(
 
