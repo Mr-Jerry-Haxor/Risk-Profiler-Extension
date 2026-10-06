@@ -136,6 +136,25 @@ async function copyStaticFiles() {
         }
     );
 
+    // ExcelJS bundles setImmediate's obsolete string-callback fallback. MV3
+    // cannot compile string callbacks; retain function callbacks without eval.
+    const excelPath = resolveFromDist("lib", "exceljs.min.js");
+    const excelSource = await readFile(excelPath, "utf8");
+    const stringCallback = '"function"!=typeof e&&(e=new Function(""+e));';
+    if (excelSource.split(stringCallback).length !== 2) {
+        throw new Error("ExcelJS CSP compatibility guard changed; review the vendor bundle before building.");
+    }
+    const globalFallback = 'Function("return this")()';
+    const runtimeFallback = 'Function("r","regeneratorRuntime = r")(n)';
+    if (excelSource.split(globalFallback).length !== 7 || excelSource.split(runtimeFallback).length !== 2) {
+        throw new Error("ExcelJS global/runtime compatibility guards changed; review the vendor bundle before building.");
+    }
+    const cspSafeExcel = excelSource.replace(stringCallback,
+        'if("function"!=typeof e)throw new TypeError("setImmediate requires a function callback");')
+        .replaceAll(globalFallback, "globalThis")
+        .replace(runtimeFallback, "(globalThis.regeneratorRuntime=n)");
+    await writeFile(excelPath, cspSafeExcel, "utf8");
+
     await cp(
         resolveFromRoot("assets"),
         resolveFromDist("assets"),

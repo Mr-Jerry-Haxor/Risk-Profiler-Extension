@@ -80,6 +80,7 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         ensureSiteTab: async () => ({ id: 1, status: "complete", url: routeUrl }),
         probeSiteSession: async () => ({ sessionActive: true }),
         cancelPendingRequests() {},
+        clearCache() {},
         getValue: async key => local.values[key],
         setValue: async (key, value) => local.set({ [key]: value }),
         getAssessmentList: async () => [row],
@@ -99,7 +100,8 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
     vm.runInContext("waitForPrerequisiteSessions = async () => { await interruptible(sessionReady, jobStopController.signal); };", context);
     const sender = { id: chrome.runtime.id, tab: { id: 1 }, frameId: 0, url: routeUrl };
     const viewSender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") + "?view=cairo&job=test" };
-    const send = (message, from = sender) => new Promise(resolve => listeners.message(message, from, resolve));
+    const send = (message, from = ["CAIRO_SURVEY_ELIGIBILITY", "START_CAIRO_JOB"].includes(message.action) ? sender : viewSender) =>
+        new Promise(resolve => listeners.message(message, from, resolve));
     return { send, sender, viewSender, local, session, chrome, context, calls, releaseSession, waitForSessions };
 }
 
@@ -169,6 +171,39 @@ test("background start succeeds without a popup and waits for sessions before va
     await h.local.set({ validationResults: [{ assessment: { assessmentId: 999 } }] });
     const snapshot = await h.send({ action: "GET_CAIRO_JOB", jobId: start.jobId }, h.viewSender);
     assert.equal(snapshot.job.results[0].assessment.assessmentId, 41559874);
+});
+
+test("popup starts reject duplicate and overlapping validation/review jobs", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    const assessments = [{ ...row, assessmentId: row.incompleteAssessmentId }];
+    assert.equal((await h.send({ action: "START_VALIDATION", assessments }, h.viewSender)).success, true);
+    for (const action of ["START_VALIDATION", "START_REVIEW"]) {
+        const response = await h.send({ action, assessments }, h.viewSender);
+        assert.equal(response.success, false);
+        assert.equal(response.code, "JOB_RUNNING");
+    }
+    h.releaseSession();
+    await flush();
+    assert.equal(h.calls.length, 1);
+});
+
+test("invalid popup start payloads do not reserve a job or report started", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    for (const assessments of [undefined, [], [{}], [{ assetName: "Test", assetId: 1, assessmentId: "invalid" }]]) {
+        assert.equal((await h.send({ action: "START_VALIDATION", assessments }, h.viewSender)).success, false);
+    }
+    assert.equal((await h.send({ action: "GET_STATUS" }, h.viewSender)).status.validationRunning, false);
+});
+
+test("Cairo content scripts cannot use privileged popup stop/clear commands", async () => {
+    const h = await workerHarness();
+    await h.local.set({ validationResults: ["keep"] });
+    for (const action of ["STOP_VALIDATION", "CLEAR_RESULTS", "SET_PLUGIN_LAYOUT"]) {
+        assert.equal((await h.send({ action }, h.sender)).success, false);
+    }
+    assert.deepEqual(h.local.values.validationResults, ["keep"]);
 });
 
 test("review uses the saved review mode and the same background engine", async () => {
@@ -650,4 +685,109 @@ test("a newly started run remains visible when polling observes the previous res
     assert.equal(h.get("progressContainer").classList.contains("hidden"), false);
     assert.equal(h.get("cancelReviewBtn").classList.contains("hidden"), false);
     assert.equal(h.get("reviewBtn").disabled, true);
+});
+
+test("rejected popup starts surface the worker error and restore controls", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
+    h.context.chrome.runtime.sendMessage = async () => ({ success: false, error: "Another assessment job is running" });
+    assert.equal(await h.context.requestAssessmentStart({ action: "START_REVIEW" }), false);
+    assert.match(h.get("progressText").textContent, /Unable to start: Another assessment job is running/);
+    assert.equal(h.get("cancelReviewBtn").classList.contains("hidden"), true);
+    assert.equal(h.get("reviewBtn").disabled, false);
+    assert.equal(h.get("validateBtn").disabled, false);
+});
+
+test("validation errors remain visible even when the failed job left progress in storage", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
+    let poll;
+    h.context.setInterval = callback => { poll = callback; };
+    h.context.chrome.storage = { local: { get: async () => ({ lastAction: "validation", validationError: "Data unavailable",
+        validationProgress: { completed: 0, total: 1 }, validationComplete: false }) } };
+    h.context.startProgressPolling();
+    await poll();
+    assert.equal(h.get("progressText").textContent, "Data unavailable");
+    assert.equal(h.get("validateBtn").disabled, false);
+});
+
+test("plugin reset stops running work before clearing all local data", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
+    const order = [];
+    h.context.window = { confirm: () => true, setTimeout() {} };
+    h.context.chrome.runtime.sendMessage = async message => { order.push(message.action); return { success: true }; };
+    h.context.chrome.storage = { local: { clear: async () => { order.push("clear"); } } };
+    await h.context.handleClearResetPlugin();
+    assert.deepEqual(order, ["STOP_VALIDATION", "clear"]);
+    h.context.chrome.runtime.sendMessage = async () => ({ success: false, error: "Unable to stop" });
+    await h.context.handleClearResetPlugin();
+    assert.equal(order.filter(item => item === "clear").length, 1, "a failed stop must not erase data under a running job");
+    assert.match(h.get("layoutSettingsStatus").textContent, /Unable to stop/);
+});
+
+test("cancel during Cairo snapshot preparation cannot restart the engine or recreate an old snapshot", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    const get = h.session.get;
+    let release;
+    let preparing = false;
+    h.session.get = async keys => {
+        if (keys === null && !preparing) {
+            preparing = true;
+            await new Promise(resolve => { release = resolve; });
+        }
+        return get(keys);
+    };
+    const start = h.send({ action: "START_CAIRO_JOB", mode: "validation" });
+    await flush();
+    assert.equal(preparing, true);
+    const stop = h.send({ action: "STOP_VALIDATION" }, h.viewSender);
+    await flush();
+    release();
+    assert.equal((await stop).success, true);
+    assert.equal((await start).success, false);
+    h.releaseSession();
+    await flush();
+    assert.equal(h.calls.length, 0);
+    assert.equal(Object.keys(h.session.values).filter(key => key.startsWith("cairoJob:")).length, 0);
+});
+
+test("result clearing blocks new starts until its storage mutation finishes", async () => {
+    const h = await workerHarness();
+    const remove = h.local.remove;
+    let release;
+    h.local.remove = async keys => {
+        if (keys.includes("validationResults")) await new Promise(resolve => { release = resolve; });
+        return remove(keys);
+    };
+    const clear = h.send({ action: "CLEAR_RESULTS" }, h.viewSender);
+    await flush();
+    const assessments = [{ ...row, assessmentId: row.incompleteAssessmentId }];
+    const rejected = await h.send({ action: "START_REVIEW", assessments }, h.viewSender);
+    assert.equal(rejected.success, false);
+    assert.equal(rejected.code, "JOB_RUNNING");
+    release();
+    assert.equal((await clear).success, true);
+    h.local.remove = remove;
+    assert.equal((await h.send({ action: "START_REVIEW", assessments }, h.viewSender)).success, true);
+    h.releaseSession();
+    await flush();
+});
+
+test("a malformed Cairo list does not erase previously saved assessment inventory", async () => {
+    const h = await workerHarness();
+    h.context.console = { ...console, error() {} };
+    await h.local.set({ assessments: [row], assessmentCount: 1 });
+    h.context.getAssessmentList = async () => ({ invalid: true });
+    const response = await h.send({ action: "REFRESH_ASSESSMENTS" }, h.viewSender);
+    assert.equal(response.success, false);
+    assert.match(response.error, /not a valid array/);
+    assert.deepEqual(h.local.values.assessments, [row]);
+    assert.equal(h.local.values.assessmentCount, 1);
+});
+
+test("a denied clear preserves displayed results rather than pretending it succeeded", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [{ assessmentId: 11 }] });
+    h.context.chrome.runtime.sendMessage = async () => ({ success: false, error: "Another assessment job is running" });
+    await h.context.clearReviewResults();
+    assert.equal(vm.runInContext("reviewResults.length", h.context), 1);
+    assert.match(h.get("progressText").textContent, /Unable to clear: Another assessment job is running/);
 });

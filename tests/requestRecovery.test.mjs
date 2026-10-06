@@ -391,3 +391,20 @@ test("a failed progress notification does not stop data retries", async () => {
     await pending;
     assert.equal(h.requests.length, 1);
 });
+
+test("a fresh run clears cached answers and does not join a previous run's pending request", async () => {
+    const h = await harness();
+    let release;
+    h.context.fetch = async () => new Promise(resolve => { release = resolve; });
+    const previous = h.context.fetchJson(cairoUrl);
+    await flush();
+    h.context.clearCache();
+    h.context.fetch = async () => ({ ok: true, url: cairoUrl, json: async () => ({ version: "current" }) });
+    assert.equal((await h.context.fetchJson(cairoUrl)).version, "current");
+    release({ ok: true, url: cairoUrl, json: async () => ({ version: "previous" }) });
+    assert.equal((await previous).version, "previous");
+    assert.equal((await h.context.fetchJson(cairoUrl)).version, "current", "an old response cannot overwrite the fresh run cache");
+    h.context.clearCache();
+    h.context.fetch = async () => ({ ok: true, url: cairoUrl, json: async () => ({ version: "next" }) });
+    assert.equal((await h.context.fetchJson(cairoUrl)).version, "next");
+});

@@ -4,6 +4,7 @@ import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 import RP4 from "../checkpoints/RP4.js";
 import RP7 from "../checkpoints/RP7.js";
+import RP3 from "../checkpoints/RP3.js";
 import { URLS } from "../utils/constants.js";
 import { replaceTokens } from "../utils/helpers.js";
 
@@ -41,6 +42,16 @@ test("RP4 is NA for SaaS regardless of device-count answer", async () => {
         const result = await RP4.validate(data);
         assert.equal(result.status, "NA");
         assert.match(result.reason, /SaaS/);
+    }
+});
+
+test("RP3 requires an actual HTTP URL rather than merely an answered URL question", async () => {
+    for (const value of ["No", "None", "Not Applicable", "not a URL"]) {
+        const data = { answers: [answer("CSIR-MFA", "MFA via Web Single Sign On (WSSO)"),
+            answer("CSIR-AppType", "Web application"), answer("CSIR-URL", value)] };
+        assert.equal((await RP3.validate(data)).status, "FAIL", value);
+        data.answers[2] = answer("CSIR-URL", "https://example.test/application");
+        assert.equal((await RP3.validate(data)).status, "PASS");
     }
 });
 

@@ -4,6 +4,7 @@ const trackedTabs = new Map();
 const tabCreations = new Map();
 const requestControllers = new Set();
 const recoveryState = new Map();
+let cacheGeneration = 0;
 
 export const SITE_RETRY_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 10000;
@@ -25,8 +26,7 @@ export function rememberSiteTab(siteId, tabId) {
 
 export function cancelPendingRequests() {
     for (const controller of requestControllers) controller.abort();
-    inFlight.clear();
-    memoryCache.clear();
+    clearCache();
 }
 
 function sleep(milliseconds) {
@@ -261,7 +261,7 @@ async function performRequest(url, config, site, signal) {
             const status = Number(data?.statusCode || data?.status);
             if (status >= 400) throw requestError(`HTTP ${status}`, status, isRetryableStatus(status));
             const normalized = unwrapApiResponse(data);
-            if (config.useCache) memoryCache.set(url, normalized);
+            if (config.useCache && config.cacheGeneration === cacheGeneration) memoryCache.set(url, normalized);
             return normalized;
         } catch (error) {
             if (signal.aborted) throw requestError("Request cancelled by user", 0, false);
@@ -280,7 +280,7 @@ async function performRequest(url, config, site, signal) {
 export async function fetchJson(url, options = {}) {
     const hostname = new URL(url).hostname;
     const site = SITES[hostname] || Object.values(SITES).find(item => new URL(item.origin).hostname === hostname);
-    const config = { retries: 3, retryDelay: 1000, useCache: true, refreshCache: false, retryUntilAvailable: Boolean(site), ...options };
+    const config = { retries: 3, retryDelay: 1000, useCache: true, refreshCache: false, retryUntilAvailable: Boolean(site), ...options, cacheGeneration };
     if (config.useCache && !config.refreshCache && memoryCache.has(url)) return memoryCache.get(url);
     const key = `${url}|${config.retryUntilAvailable}|${config.useCache}|${config.refreshCache}|${Boolean(config.sessionProbe)}`;
     if (!inFlight.has(key)) {
@@ -302,5 +302,7 @@ export async function fetchJson(url, options = {}) {
 }
 
 export function clearCache() {
+    cacheGeneration++;
     memoryCache.clear();
+    inFlight.clear();
 }

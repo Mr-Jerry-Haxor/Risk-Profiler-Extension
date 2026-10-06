@@ -16,11 +16,12 @@ export async function exportResults(validationResults) {
     const allAssessmentsSheet = workbook.addWorksheet("All Assessments");
 
     const sheetLookup = new Map();
+    const usedSheetNames = new Set(workbook.worksheets.map(sheet => sheet.name.toLowerCase()));
 
     for (let index = 0; index < results.length; index++) {
         const result = results[index];
         const assessment = getAssessment(result);
-        const sheetName = createSheetName(assessment, index);
+        const sheetName = createSheetName(assessment, index, usedSheetNames);
 
         sheetLookup.set(assessment.assessmentId, sheetName);
 
@@ -52,6 +53,8 @@ async function loadTemplateWorkbook() {
         await fetch(
             TEMPLATE_PATH
         );
+
+    if (!response.ok) throw new Error(`Unable to load the Excel template (HTTP ${response.status}).`);
 
     const base64 =
         (
@@ -635,11 +638,10 @@ function getAssessment(
 
 function createSheetName(
     assessment,
-    index
+    index,
+    usedNames = new Set()
 ) {
-
-    const name =
-        (
+    const name = String(
             assessment.assetName ||
             `Assessment ${index + 1}`
         )
@@ -647,12 +649,15 @@ function createSheetName(
                 /[\\/?*[\]:]/g,
                 " "
             )
-            .trim();
-
-    return name.slice(
-        0,
-        31
-    );
+            .trim().replace(/^'+|'+$/g, "") || `Assessment ${index + 1}`;
+    let candidate = name.slice(0, 31).replace(/'+$/g, "");
+    let suffix = 1;
+    while (usedNames.has(candidate.toLowerCase()) || candidate.toLowerCase() === "history") {
+        const label = ` (${suffix++})`;
+        candidate = name.slice(0, 31 - label.length).replace(/'+$/g, "") + label;
+    }
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
 }
 
 function formatDate(

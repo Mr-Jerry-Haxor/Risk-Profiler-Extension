@@ -1101,7 +1101,12 @@ async function handleClearResetPlugin() {
 
     try {
 
+        cancellationInProgress = true;
+        resultsViewGeneration++;
+        const stopped = await chrome.runtime.sendMessage({ action: "STOP_VALIDATION" });
+        if (!stopped?.success) throw new Error(stopped?.error || "Unable to stop the active job before reset.");
         await chrome.storage.local.clear();
+        resetStoppedJobUi();
 
         status.textContent =
             "Plugin cleared. Reloading…";
@@ -1120,6 +1125,8 @@ async function handleClearResetPlugin() {
             "Error clearing plugin: " + error.message;
 
         clearButton.disabled = false;
+    } finally {
+        cancellationInProgress = false;
     }
 }
 
@@ -2265,7 +2272,7 @@ async function startValidation() {
             "hidden"
         );
 
-    await chrome.runtime.sendMessage({
+    await requestAssessmentStart({
 
         action:
             "START_VALIDATION",
@@ -2339,7 +2346,7 @@ async function startReview() {
     $("reviewBtn").disabled =
         true;
 
-    await chrome.runtime.sendMessage({
+    await requestAssessmentStart({
 
         action:
             "START_REVIEW",
@@ -2432,6 +2439,27 @@ PROGRESS
 ====================================================
 */
 
+async function requestAssessmentStart(message) {
+    const generation = ++resultsViewGeneration;
+    $("validateBtn").disabled = true;
+    $("reviewBtn").disabled = true;
+    try {
+        const response = await chrome.runtime.sendMessage(message);
+        if (generation !== resultsViewGeneration) return false;
+        if (!response?.success || !response.started) throw new Error(response?.error || "Unable to start the assessment job.");
+        return true;
+    } catch (error) {
+        if (generation !== resultsViewGeneration) return false;
+        $("progressContainer").classList.remove("hidden");
+        $("progressText").textContent = `Unable to start: ${error.message}`;
+        $("cancelBtn").classList.add("hidden");
+        $("cancelReviewBtn").classList.add("hidden");
+        $("validateBtn").disabled = false;
+        $("reviewBtn").disabled = false;
+        return false;
+    }
+}
+
 function resetStoppedJobUi() {
     validationResults = [];
     reviewResults = [];
@@ -2517,10 +2545,12 @@ function startProgressPolling() {
             if (
                 lastAction === "validation" &&
                 data.validationProgress &&
-                !data.validationComplete
+                !data.validationComplete && !data.validationError
             ) {
                 $("progressContainer").classList.remove("hidden");
                 $("cancelBtn").classList.remove("hidden");
+                $("validateBtn").disabled = true;
+                $("reviewBtn").disabled = true;
 
                 renderProgress(
                     data.validationProgress,
@@ -2540,6 +2570,8 @@ function startProgressPolling() {
                 );
 
                 resultsRendered = true;
+                $("validateBtn").disabled = false;
+                $("reviewBtn").disabled = false;
 
                 activateResultsTab(
                     "validation"
@@ -2589,11 +2621,12 @@ function startProgressPolling() {
             if (
                 lastAction === "review" &&
                 data.reviewProgress &&
-                !data.reviewComplete
+                !data.reviewComplete && !data.reviewError
             ) {
                 $("progressContainer").classList.remove("hidden");
                 $("cancelReviewBtn").classList.remove("hidden");
                 $("reviewBtn").disabled = true;
+                $("validateBtn").disabled = true;
 
                 renderProgress(
                     data.reviewProgress,
@@ -2613,6 +2646,7 @@ function startProgressPolling() {
                 );
 
                 reviewResultsRendered = true;
+                $("validateBtn").disabled = false;
 
                 activateResultsTab(
                     "review"
@@ -2639,8 +2673,7 @@ function startProgressPolling() {
 
             if (
                 lastAction === "validation" &&
-                data.validationError &&
-                !data.validationProgress
+                data.validationError
             ) {
 
                 $("cancelBtn")
@@ -2650,11 +2683,14 @@ function startProgressPolling() {
 
                 $("progressText").textContent =
                     data.validationError;
+                $("validateBtn").disabled = false;
+                $("reviewBtn").disabled = false;
             }
 
             if (
                 data.reviewError
             ) {
+                $("validateBtn").disabled = false;
 
                 $("reviewBtn").disabled =
                     false;
@@ -2664,6 +2700,11 @@ function startProgressPolling() {
                         "hidden"
                     );
             }
+
+            const running = Boolean((data.validationProgress && !data.validationComplete && !data.validationError) ||
+                (data.reviewProgress && !data.reviewComplete && !data.reviewError));
+            $("validateBtn").disabled = running;
+            $("reviewBtn").disabled = running;
 
         },
         1000
@@ -4647,13 +4688,22 @@ async function loadExistingResults() {
     }
 }
 
+async function requestResultClear(action) {
+    try {
+        const response = await chrome.runtime.sendMessage({ action });
+        if (!response?.success) throw new Error(response?.error || "Unable to clear results.");
+        resultsViewGeneration++;
+        return true;
+    } catch (error) {
+        $("progressContainer").classList.remove("hidden");
+        $("progressText").textContent = `Unable to clear: ${error.message}`;
+        return false;
+    }
+}
+
 async function clearValidationResults() {
 
-    await chrome.runtime.sendMessage({
-
-        action:
-            "CLEAR_RESULTS"
-    });
+    if (!await requestResultClear("CLEAR_RESULTS")) return;
 
     validationResults = [];
 
@@ -4689,11 +4739,7 @@ async function clearValidationResults() {
 
 async function clearReviewResults() {
 
-    await chrome.runtime.sendMessage({
-
-        action:
-            "CLEAR_REVIEW_RESULTS"
-    });
+    if (!await requestResultClear("CLEAR_REVIEW_RESULTS")) return;
 
     reviewResults = [];
 
@@ -4758,7 +4804,7 @@ async function retryFailedAssessments() {
             "hidden"
         );
 
-    await chrome.runtime.sendMessage({
+    await requestAssessmentStart({
 
         action:
             "START_VALIDATION",

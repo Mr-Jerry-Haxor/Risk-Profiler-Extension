@@ -2322,58 +2322,27 @@ export async function reviewBatch(
         const batchResults =
             await Promise.all(
                 batch.map(async assessment => {
+                    let result;
                     try {
-                        const result =
-                            await buildReviewResult(
-                                assessment,
-                                surveyTemplates,
-                                normalizedReviewConfig
-                            );
-
-                        completed += 1;
-
-                        progressCallback?.({
-                            completed,
-                            total:
-                                assessments.length,
-                            current:
-                                assessment.assetName,
-                            assessment,
-                            result
-                        });
-
-                        return result;
+                        result = await buildReviewResult(
+                            assessment, surveyTemplates, normalizedReviewConfig
+                        );
                     } catch (error) {
-                        completed += 1;
-
-                        const result = {
-                            assessmentId:
-                                assessment.assessmentId,
-                            assetName:
-                                assessment.assetName,
+                        result = {
+                            assessmentId: assessment.assessmentId,
+                            assetName: assessment.assetName,
                             assessment,
-                            status:
-                                assessment.incompleteAssessmentId
-                                    ? "Incomplete"
-                                    : "Completed",
-                            error:
-                                error.message,
-                            reviewedAt:
-                                Date.now()
+                            status: assessment.incompleteAssessmentId ? "Incomplete" : "Completed",
+                            error: error.message,
+                            reviewedAt: Date.now()
                         };
-
-                        progressCallback?.({
-                            completed,
-                            total:
-                                assessments.length,
-                            current:
-                                assessment.assetName,
-                            assessment,
-                            result
-                        });
-
-                        return result;
                     }
+                    completed += 1;
+                    await progressCallback?.({
+                        completed, total: assessments.length,
+                        current: assessment.assetName, assessment, result
+                    });
+                    return result;
                 })
             );
 

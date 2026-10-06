@@ -5,7 +5,6 @@ import {
     getAnswer,
     getAnswers,
     getQuestionSummary,
-    hasAnswer,
     includesValue,
     normalize,
     notApplicable,
@@ -99,10 +98,7 @@ const RP3 = {
                         return false;
                     }
 
-                    return hasAnswer(
-                        context,
-                        answer.alternateQuestionId
-                    );
+                    return extractHttpUrls(answer.answerOptions).length > 0;
                 });
 
         const detailUrlFound =

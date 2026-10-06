@@ -30,7 +30,7 @@ import {
 }
 from "./utils/constants.js";
 
-import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab, cancelPendingRequests, ensureSiteTab, probeSiteSession } from "./api/requestManager.js";
+import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab, cancelPendingRequests, ensureSiteTab, probeSiteSession, clearCache } from "./api/requestManager.js";
 
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
@@ -55,6 +55,31 @@ function trackedProgress(callback) {
 
 function jobRunningError() {
     return Object.assign(new Error("Another assessment job is running. Wait for it to finish or cancel it and start the current app."), { code: "JOB_RUNNING" });
+}
+
+function validateJobAssessments(assessments) {
+    if (!Array.isArray(assessments) || !assessments.length || assessments.some(item =>
+        !item || !/^[1-9]\d*$/.test(String(item.assessmentId ?? "")) ||
+        !/^[1-9]\d*$/.test(String(item.assetId ?? "")) ||
+        typeof item.assetName !== "string" || !item.assetName.trim())) {
+        throw new Error("Select valid assessments before starting a job.");
+    }
+}
+
+function isPluginPage(sender) {
+    if (sender?.id !== chrome.runtime.id) return false;
+    try {
+        const url = new URL(sender.url);
+        const expected = new URL(chrome.runtime.getURL("popup.html"));
+        return url.protocol === expected.protocol && url.host === expected.host && url.pathname === expected.pathname;
+    } catch { return false; }
+}
+
+async function clearIdleResults(clearData) {
+    if (cairoJobRunning || replacingJob || validationRunning || reviewRunning) throw jobRunningError();
+    replacingJob = true;
+    try { await clearData(); }
+    finally { replacingJob = false; }
 }
 
 async function stopAndClearPreviousJobs() {
@@ -171,12 +196,14 @@ async function processCairoJob(job) {
 
 async function handleCairoMessage(message, sender) {
     if (message.action === "GET_CAIRO_JOB") {
+        const generation = jobGeneration;
         if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL("popup.html") + "?view=cairo&")) {
             throw new Error("This result view is not authorized.");
         }
         if (typeof message.jobId !== "string" || !/^[\da-f-]{36}$/.test(message.jobId)) throw new Error("Invalid result view.");
         const key = `cairoJob:${message.jobId}`;
         const job = (await chrome.storage.session.get(key))[key];
+        if (generation !== jobGeneration) throw new Error("This result view was cancelled. Run the assessment again.");
         if (!job) throw new Error("This result view has expired. Close it and run the assessment again.");
         if (["preparing", "running"].includes(job.state) && !cairoJobRunning) {
             job.state = "error";
@@ -215,17 +242,22 @@ async function handleCairoMessage(message, sender) {
     }
     cairoJobRunning = true;
     replacingJob = false;
+    const generation = jobGeneration;
     const job = { jobId: crypto.randomUUID(), route, mode: message.mode, state: "preparing", startedAt: Date.now() };
     try {
-        // Keep session snapshots bounded; do not touch normal popup results.
-        const saved = await chrome.storage.session.get(null);
-        const oldJobs = Object.entries(saved).filter(([key]) => key.startsWith("cairoJob:"))
-            .sort((a, b) => (b[1].startedAt || 0) - (a[1].startedAt || 0));
-        const expired = oldJobs.filter(([, item], index) => index >= 9 || Date.now() - item.startedAt > 86400000);
-        if (expired.length) await chrome.storage.session.remove(expired.map(([key]) => key));
-        await writeCairoJob(job);
+        await trackJob((async () => {
+            // Keep session snapshots bounded; do not touch normal popup results.
+            const saved = await chrome.storage.session.get(null);
+            if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+            const oldJobs = Object.entries(saved).filter(([key]) => key.startsWith("cairoJob:"))
+                .sort((a, b) => (b[1].startedAt || 0) - (a[1].startedAt || 0));
+            const expired = oldJobs.filter(([, item], index) => index >= 9 || Date.now() - item.startedAt > 86400000);
+            if (expired.length) await chrome.storage.session.remove(expired.map(([key]) => key));
+            await writeCairoJob(job);
+        })());
+        if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
     } catch (error) {
-        cairoJobRunning = false;
+        if (generation === jobGeneration) cairoJobRunning = false;
         throw error;
     }
     trackJob(processCairoJob(job)).catch(console.error);
@@ -432,7 +464,8 @@ async function refreshAssessments() {
             ? response
             : Array.isArray(response?.data)
                 ? response.data
-                : [];
+                : null;
+        if (!items) throw new Error("Cairo assessment list is not a valid array.");
 
         const normalized = items.map(item => {
             const assessmentId =
@@ -494,13 +527,16 @@ async function runValidationJob(
 ) {
 
     if (
-        validationRunning
+        validationRunning || reviewRunning || replacingJob
     ) {
 
         throw new Error(
-            "Validation already running"
+            "Another assessment job is running"
         );
     }
+
+    validateJobAssessments(assessments);
+    clearCache();
 
     cancellationRequested = false;
     validationRunning = true;
@@ -518,6 +554,7 @@ async function runValidationJob(
 
     try {
 
+        await clearValidationData();
         await chrome.storage.local.set({
 
             validationComplete:
@@ -718,13 +755,16 @@ async function runReviewJob(
 ) {
 
     if (
-        reviewRunning
+        reviewRunning || validationRunning || replacingJob
     ) {
 
         throw new Error(
             "Review already running"
         );
     }
+
+    validateJobAssessments(assessments);
+    clearCache();
 
     reviewCancellationRequested = false;
     reviewRunning = true;
@@ -738,6 +778,7 @@ async function runReviewJob(
 
     try {
 
+        await clearReviewData();
         await chrome.storage.local.set({
 
             reviewComplete:
@@ -1194,10 +1235,14 @@ chrome.runtime.onMessage.addListener(
 
                 try {
 
+                    if (!message || typeof message.action !== "string") throw new Error("Invalid plugin message.");
+
                     if (["CAIRO_SURVEY_ELIGIBILITY", "START_CAIRO_JOB", "GET_CAIRO_JOB"].includes(message.action)) {
                         sendResponse(await handleCairoMessage(message, sender));
                         return;
                     }
+
+                    if (!isPluginPage(sender)) throw new Error("This action is only available in the plugin UI.");
 
                     switch (
                         message.action
@@ -1220,7 +1265,8 @@ chrome.runtime.onMessage.addListener(
 
                         case "START_VALIDATION":
 
-                            if (cairoJobRunning || replacingJob) throw jobRunningError();
+                            if (cairoJobRunning || replacingJob || validationRunning || reviewRunning) throw jobRunningError();
+                            validateJobAssessments(message.assessments);
 
                             trackJob(runValidationJob(
 
@@ -1243,7 +1289,8 @@ chrome.runtime.onMessage.addListener(
 
                         case "START_REVIEW":
 
-                            if (cairoJobRunning || replacingJob) throw jobRunningError();
+                            if (cairoJobRunning || replacingJob || validationRunning || reviewRunning) throw jobRunningError();
+                            validateJobAssessments(message.assessments);
 
                             trackJob(runReviewJob(
 
@@ -1322,8 +1369,7 @@ chrome.runtime.onMessage.addListener(
                             break;
 
                         case "CLEAR_RESULTS":
-
-                            await clearValidationData();
+                            await clearIdleResults(clearValidationData);
 
                             sendResponse({
 
@@ -1333,8 +1379,7 @@ chrome.runtime.onMessage.addListener(
                             break;
 
                         case "CLEAR_REVIEW_RESULTS":
-
-                            await clearReviewData();
+                            await clearIdleResults(clearReviewData);
 
                             sendResponse({
 

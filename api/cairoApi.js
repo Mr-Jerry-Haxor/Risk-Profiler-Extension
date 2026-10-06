@@ -16,7 +16,8 @@ from "./requestManager.js";
 export async function getAssessmentList() {
 
     return fetchJson(
-        URLS.PRIMARY_ASSESSMENTS
+        URLS.PRIMARY_ASSESSMENTS,
+        { refreshCache: true }
     );
 }
 
