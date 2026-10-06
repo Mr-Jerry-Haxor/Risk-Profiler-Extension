@@ -32,6 +32,8 @@ export async function validateBatch(assessments, progressCallback, shouldCancel)
                     error: error.message
                 };
             }
+            result.completedAt = Date.now();
+            result.completedAt = Date.now();
             completed++;
             // Persist progress before the caller stores its final completion state.
             // Storage/progress errors must not be relabelled as checkpoint failures.

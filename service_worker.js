@@ -35,6 +35,9 @@ import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab, cancelPendingRe
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
 let cairoJobRunning = false;
+let currentCairoJob = null;
+let currentCairoReady = null;
+const runningAssessments = { validation: [], review: [] };
 let cairoTemplatesPromise = null;
 let cairoTemplatesUpdatedAt = 0;
 let replacingJob = false;
@@ -78,7 +81,13 @@ function isPluginPage(sender) {
 async function clearIdleResults(clearData) {
     if (cairoJobRunning || replacingJob || validationRunning || reviewRunning) throw jobRunningError();
     replacingJob = true;
-    try { await clearData(); }
+    try {
+        await clearData();
+        const mode = clearData === clearReviewData ? "review" : "validation";
+        const saved = await chrome.storage.session.get(null);
+        const keys = Object.entries(saved).filter(([key, job]) => key.startsWith("cairoJob:") && job.mode === mode).map(([key]) => key);
+        if (keys.length) await chrome.storage.session.remove(keys);
+    }
     finally { replacingJob = false; }
 }
 
@@ -93,6 +102,9 @@ async function stopAndClearPreviousJobs() {
     validationRunning = false;
     reviewRunning = false;
     cairoJobRunning = false;
+    currentCairoJob = null;
+    runningAssessments.validation = [];
+    runningAssessments.review = [];
     currentValidationId = null;
     currentReviewId = null;
     validationStartedAt = null;
@@ -154,7 +166,77 @@ function getCairoSenderRoute(sender) {
 }
 
 async function writeCairoJob(job) {
-    await chrome.storage.session.set({ [`cairoJob:${job.jobId}`]: job });
+    await trackJob(chrome.storage.session.set({ [`cairoJob:${job.jobId}`]: job }));
+}
+
+function storeReusableCairoJob(job, generation) {
+    return trackJob((async () => {
+        const saved = await chrome.storage.session.get(null);
+        if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+        const jobs = Object.entries(saved).filter(([key]) => key.startsWith("cairoJob:"))
+            .sort((a, b) => (b[1].startedAt || 0) - (a[1].startedAt || 0));
+        const expired = jobs.filter(([, item], index) => index >= 9 || Date.now() - item.startedAt > 86400000);
+        if (expired.length) await chrome.storage.session.remove(expired.map(([key]) => key));
+        if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+        await writeCairoJob(job);
+    })());
+}
+
+function sameCairoJob(job, route, mode) {
+    return job?.mode === mode && String(job.route?.assessmentId) === route.assessmentId &&
+        String(job.route?.surveyTemplateId) === route.surveyTemplateId;
+}
+
+function resultsForRoute(results, route) {
+    return (Array.isArray(results) ? results : []).filter(result =>
+        String(result.assessmentId ?? result.assessment?.assessmentId) === route.assessmentId &&
+        String(result.surveyTemplateId ?? result.assessment?.surveyTemplateId ?? result.newSurveyTemplateId) === route.surveyTemplateId);
+}
+
+async function reusableCairoJob(route, mode) {
+    const generation = jobGeneration;
+    if (cairoJobRunning && sameCairoJob(currentCairoJob, route, mode)) {
+        await currentCairoReady;
+        if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+        return currentCairoJob;
+    }
+    const saved = await chrome.storage.session.get(null);
+    if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+    const runId = mode === "review" ? currentReviewId : currentValidationId;
+    const running = mode === "review" ? reviewRunning : validationRunning;
+    const linked = Object.entries(saved).find(([key, job]) => key.startsWith("cairoJob:") && sameCairoJob(job, route, mode) &&
+        job.linkedRun && job.state === "running" && job.runId === runId)?.[1];
+    if (running && linked) return linked;
+    const selected = runningAssessments[mode].find(item => String(item.assessmentId) === route.assessmentId);
+    // Verify a popup run's template before attaching this Cairo page to it.
+    if (running && selected) {
+        const detail = selected.surveyTemplateId ? selected : await getAssessmentDetail(route.assessmentId);
+        if (generation !== jobGeneration || runId !== (mode === "review" ? currentReviewId : currentValidationId)) {
+            throw new Error("Assessment run changed. Please try again.");
+        }
+        if (String(detail.surveyTemplateId ?? detail.surveyTemplate?.surveyTemplateId) === route.surveyTemplateId) {
+            const job = { jobId: crypto.randomUUID(), route, mode, state: "running", linkedRun: true,
+                runId: mode === "review" ? currentReviewId : currentValidationId,
+                startedAt: mode === "review" ? reviewStartedAt : validationStartedAt, assetName: selected.assetName };
+            if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+            await storeReusableCairoJob(job, generation);
+            return job;
+        }
+    }
+    const snapshot = Object.entries(saved).filter(([key, job]) => key.startsWith("cairoJob:") &&
+        sameCairoJob(job, route, mode) && job.state === "complete" && Date.now() - job.startedAt <= 86400000)
+        .sort((a, b) => (b[1].completedAt || b[1].startedAt) - (a[1].completedAt || a[1].startedAt))[0]?.[1];
+    if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+    const data = await chrome.storage.local.get([`${mode}Results`, `${mode}Complete`, `${mode}CompletedAt`]);
+    const results = resultsForRoute(data[`${mode}Results`], route);
+    if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
+    if (snapshot && (!data[`${mode}Complete`] || !results.length || (snapshot.completedAt || snapshot.progress?.completedAt || 0) >= (data[`${mode}CompletedAt`] || 0))) return snapshot;
+    if (!data[`${mode}Complete`] || !results.length) return null;
+    const completedAt = data[`${mode}CompletedAt`];
+    const job = { jobId: crypto.randomUUID(), route, mode, state: "complete", results,
+        startedAt: completedAt || Date.now(), completedAt };
+    await storeReusableCairoJob(job, generation);
+    return job;
 }
 
 async function processCairoJob(job) {
@@ -181,6 +263,7 @@ async function processCairoJob(job) {
         job.progress = data[`${job.mode}Progress`];
         job.error = data[`${job.mode}Error`] || null;
         job.results = data[`${job.mode}Results`] || [];
+        job.completedAt = job.progress?.completedAt || Date.now();
         job.state = job.error ? "error" : "complete";
     } catch (error) {
         job.state = "error";
@@ -205,7 +288,24 @@ async function handleCairoMessage(message, sender) {
         const job = (await chrome.storage.session.get(key))[key];
         if (generation !== jobGeneration) throw new Error("This result view was cancelled. Run the assessment again.");
         if (!job) throw new Error("This result view has expired. Close it and run the assessment again.");
-        if (["preparing", "running"].includes(job.state) && !cairoJobRunning) {
+        if (job.linkedRun && job.state === "running") {
+            const data = await chrome.storage.local.get([`${job.mode}Progress`, `${job.mode}Results`, `${job.mode}Error`, `${job.mode}Complete`, `${job.mode}CompletedAt`]);
+            const progress = data[`${job.mode}Progress`];
+            const running = job.mode === "review" ? reviewRunning : validationRunning;
+            const runId = job.mode === "review" ? currentReviewId : currentValidationId;
+            if (progress?.runId === job.runId) job.progress = progress;
+            if (data[`${job.mode}Complete`] && progress?.runId === job.runId) {
+                job.state = "complete";
+                job.results = resultsForRoute(data[`${job.mode}Results`], job.route);
+                job.completedAt = data[`${job.mode}CompletedAt`];
+            } else if (!running || runId !== job.runId) {
+                job.state = "error";
+                job.error = data[`${job.mode}Error`] || "This assessment run stopped. Re-trigger it to continue.";
+            }
+            if (generation !== jobGeneration) throw new Error("This result view was cancelled. Run the assessment again.");
+            await writeCairoJob(job);
+        }
+        if (!job.linkedRun && ["preparing", "running"].includes(job.state) && !cairoJobRunning) {
             job.state = "error";
             job.error = "The background worker restarted before this assessment finished. Close this view and run it again.";
             await writeCairoJob(job);
@@ -229,6 +329,11 @@ async function handleCairoMessage(message, sender) {
     if (!eligible) throw new Error("This survey template is not supported by RiskProfiler.");
     if (!["validation", "review"].includes(message.mode)) throw new Error("Invalid assessment action.");
     if (replacingJob) throw jobRunningError();
+    if (message.forceNew !== true && message.replaceExisting !== true) {
+        const existing = await reusableCairoJob(route, message.mode);
+        if (replacingJob) throw jobRunningError();
+        if (existing) return { success: true, jobId: existing.jobId, reused: true };
+    }
     if (message.replaceExisting === true) {
         replacingJob = true;
         try {
@@ -244,8 +349,9 @@ async function handleCairoMessage(message, sender) {
     replacingJob = false;
     const generation = jobGeneration;
     const job = { jobId: crypto.randomUUID(), route, mode: message.mode, state: "preparing", startedAt: Date.now() };
+    currentCairoJob = job;
     try {
-        await trackJob((async () => {
+        currentCairoReady = trackJob((async () => {
             // Keep session snapshots bounded; do not touch normal popup results.
             const saved = await chrome.storage.session.get(null);
             if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
@@ -255,6 +361,7 @@ async function handleCairoMessage(message, sender) {
             if (expired.length) await chrome.storage.session.remove(expired.map(([key]) => key));
             await writeCairoJob(job);
         })());
+        await currentCairoReady;
         if (generation !== jobGeneration) throw new Error("Assessment job cancelled by user");
     } catch (error) {
         if (generation === jobGeneration) cairoJobRunning = false;
@@ -540,6 +647,7 @@ async function runValidationJob(
 
     cancellationRequested = false;
     validationRunning = true;
+    runningAssessments.validation = assessments;
     const generation = jobGeneration;
 
     const failedAssessments = [];
@@ -677,6 +785,12 @@ async function runValidationJob(
 
         if (generation !== jobGeneration || cancellationRequested) throw new Error("Validation cancelled by user");
 
+        const completedAt = Date.now();
+        results.forEach(result => {
+            const assessment = assessments.find(item => String(item.assessmentId) === String(result.assessmentId ?? result.assessment?.assessmentId));
+            result.completedAt ||= completedAt;
+            result.surveyTemplateId ||= assessment?.surveyTemplateId || contextStore[result.assessmentId]?.assessment?.surveyTemplateId || contextStore[result.assessmentId]?.assessment?.surveyTemplate?.surveyTemplateId;
+        });
         await saveValidationResults(
             results
         );
@@ -698,7 +812,7 @@ async function runValidationJob(
                 true,
 
             validationCompletedAt:
-                Date.now(),
+                completedAt,
 
             validationProgress: {
                 runId:
@@ -717,7 +831,7 @@ async function runValidationJob(
                     validationStartedAt,
 
                 completedAt:
-                    Date.now()
+                    completedAt
             }
         });
 
@@ -768,6 +882,7 @@ async function runReviewJob(
 
     reviewCancellationRequested = false;
     reviewRunning = true;
+    runningAssessments.review = assessments;
     const generation = jobGeneration;
 
     currentReviewId =
@@ -872,6 +987,12 @@ async function runReviewJob(
             );
 
         if (generation !== jobGeneration || reviewCancellationRequested) throw new Error("Review cancelled by user");
+        const completedAt = Date.now();
+        results.forEach(result => {
+            const assessment = assessments.find(item => String(item.assessmentId) === String(result.assessmentId));
+            result.completedAt ||= completedAt;
+            result.surveyTemplateId ||= assessment?.surveyTemplateId;
+        });
         await saveReviewResults(
             results
         );
@@ -885,7 +1006,7 @@ async function runReviewJob(
                 true,
 
             reviewCompletedAt:
-                Date.now(),
+                completedAt,
 
             reviewProgress: {
                 runId:
@@ -904,7 +1025,7 @@ async function runReviewJob(
                     reviewStartedAt,
 
                 completedAt:
-                    Date.now()
+                    completedAt
             },
 
             lastAction:
@@ -954,6 +1075,7 @@ async function clearValidationData() {
         "validationError",
 
         "validationStatus",
+        "validationCompletedAt",
 
         "failedAssessments",
 
@@ -975,7 +1097,8 @@ async function clearReviewData() {
 
         "reviewError",
 
-        "reviewStatus"
+        "reviewStatus",
+        "reviewCompletedAt"
     ]);
 }
 

@@ -112,6 +112,46 @@ DOM HELPERS
 const $ = id =>
     document.getElementById(id);
 
+let pluginDialogOpen = false;
+let preparingReviewEmail = false;
+const resultsCompletedAt = {};
+
+function showPluginDialog(message, { title = "Risk Profiler", confirm = false, acceptLabel = "OK" } = {}) {
+    if (pluginDialogOpen) return Promise.resolve(false);
+    pluginDialogOpen = true;
+    const dialog = $("pluginDialog");
+    const previousFocus = document.activeElement;
+    $("pluginDialogTitle").textContent = title;
+    $("pluginDialogMessage").textContent = message;
+    $("pluginDialogCancel").hidden = !confirm;
+    $("pluginDialogAccept").textContent = acceptLabel;
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = accepted => {
+            if (settled) return;
+            settled = true;
+            dialog.close();
+            pluginDialogOpen = false;
+            previousFocus?.focus();
+            resolve(accepted);
+        };
+        $("pluginDialogAccept").onclick = () => finish(true);
+        $("pluginDialogCancel").onclick = () => finish(false);
+        dialog.oncancel = event => { event.preventDefault(); finish(false); };
+        // A queued close event from a previous dialog must not dismiss a new one.
+        dialog.onclose = () => { if (!dialog.open) finish(false); };
+        dialog.showModal();
+        (confirm ? $("pluginDialogCancel") : $("pluginDialogAccept")).focus();
+    });
+}
+
+function resultCompletionText(result, mode) {
+    const value = result?.completedAt || result?.reviewedAt || resultsCompletedAt[mode.toLowerCase()];
+    const date = new Date(value);
+    if (!value || !Number.isFinite(date.getTime())) return `${mode} completion time unavailable (older result)`;
+    return `${mode} completed: ${date.toLocaleString(undefined, { timeZoneName: "short" })}`;
+}
+
 /*
 ====================================================
 INIT
@@ -182,6 +222,10 @@ async function initializeCairoView() {
             if (job.state === "error") throw new Error(job.error || "Assessment processing failed.");
             if (job.state !== "complete") return;
             complete = true;
+            job.results = (job.results || []).map(result => {
+                const completedAt = result.completedAt || result.reviewedAt || job.completedAt || job.progress?.completedAt;
+                return completedAt ? { ...result, completedAt } : result;
+            });
             if (job.mode === "validation") {
                 validationResults = job.results || [];
                 renderResults(validationResults);
@@ -1075,8 +1119,9 @@ async function savePluginLayoutSetting() {
 async function handleClearResetPlugin() {
 
     const confirmed =
-        window.confirm(
-            "Are you sure you want to clear all local data and reset the plugin to its initial state? This action cannot be undone."
+        await showPluginDialog(
+            "Are you sure you want to clear all local data and reset the plugin to its initial state? This action cannot be undone.",
+            { title: "Reset plugin?", confirm: true, acceptLabel: "Reset" }
         );
 
     if (!confirmed) {
@@ -1514,7 +1559,7 @@ function attachEvents() {
                     event
                 ).catch(() => {
 
-                    window.alert(
+                    showPluginDialog(
                         "The pasted image could not be added to the email template."
                     );
                 });
@@ -2239,7 +2284,7 @@ async function startValidation() {
         selected.length === 0
     ) {
 
-        alert(
+        await showPluginDialog(
             "Select at least one assessment."
         );
 
@@ -2297,7 +2342,7 @@ async function startReview() {
         selected.length === 0
     ) {
 
-        alert(
+        await showPluginDialog(
             "Select at least one assessment."
         );
 
@@ -2512,6 +2557,8 @@ function startProgressPolling() {
                 await chrome.storage.local.get([
 
                     "resultsResetId",
+                    "validationCompletedAt",
+                    "reviewCompletedAt",
                     "validationProgress",
 
                     "validationComplete",
@@ -2531,6 +2578,8 @@ function startProgressPolling() {
                     CONFIG.STORAGE_KEYS.LAST_ACTION
                 ]);
             if (cancellationInProgress || generation !== resultsViewGeneration) return;
+            resultsCompletedAt.validation = data.validationCompletedAt;
+            resultsCompletedAt.review = data.reviewCompletedAt;
             if (data.resultsResetId && data.resultsResetId !== lastResultsResetId) {
                 lastResultsResetId = data.resultsResetId;
                 resetStoppedJobUi();
@@ -2943,6 +2992,7 @@ function renderResults(
 
                 </div>
 
+                <div class="result-completed-at">${resultCompletionText(result, "Validation")}</div>
                 <div class="result-meta">
 
                     ${result.error
@@ -3107,6 +3157,7 @@ function renderReviewResults(
                     </span>
                 </div>
                 <div class="review-card-meta">
+                    <div class="result-completed-at">${resultCompletionText(result, "Review")}</div>
                     ${dateRows}
                     <div><strong>Review Items:</strong> ${result.workQueue ? result.workQueue.length : 0}</div>
                 </div>
@@ -3368,6 +3419,14 @@ function validReviewRecipientEmails(
 async function openReviewEmail(
     assessmentId
 ) {
+    if (preparingReviewEmail) return;
+    preparingReviewEmail = true;
+    try { await prepareReviewEmail(assessmentId); }
+    catch (error) { await showPluginDialog(error.message || "Unable to prepare the email draft."); }
+    finally { preparingReviewEmail = false; }
+}
+
+async function prepareReviewEmail(assessmentId) {
 
     const review =
         reviewResults.find(
@@ -3388,7 +3447,7 @@ async function openReviewEmail(
 
     if (recipients.length === 0) {
 
-        window.alert(
+        await showPluginDialog(
             "No valid Application Manager or Business System Manager email address was found for this assessment."
         );
 
@@ -3420,6 +3479,11 @@ async function openReviewEmail(
         ) ||
         `${review.assetName || "Assessment"} Risk Profiler Review`;
 
+    if (!await showPluginDialog(
+        `Prepare a review email for ${review.assetName || "this assessment"}?\n\nTo: ${recipients.join("; ")}\nSubject: ${subject}\n\nThe formatted body will be copied. Paste it into the draft, then send it from your email application.`,
+        { title: "Prepare review email?", confirm: true, acceptLabel: "Open email draft" }
+    )) return;
+
     try {
 
         await copyRichEmailToClipboard(
@@ -3429,7 +3493,7 @@ async function openReviewEmail(
 
     } catch (error) {
 
-        window.alert(
+        await showPluginDialog(
             error?.message ||
             "The formatted email could not be copied to the clipboard."
         );
@@ -3446,10 +3510,6 @@ async function openReviewEmail(
         ).join(";")}?subject=${encodeURIComponent(
             subject
         )}`;
-
-    window.alert(
-        "The fully formatted email body has been copied. Paste it into the email draft."
-    );
 
     await chrome.tabs.create({
         url:
@@ -3582,7 +3642,7 @@ function openReviewNotesModal(
         result.assetName || "Review Notes";
 
     $("reviewNotesMeta").innerHTML =
-        result.notesMetaHtml || "";
+        `<div class="result-completed-at">${resultCompletionText(result, "Review")}</div>` + (result.notesMetaHtml || "");
 
     renderReviewBasisInfo(
         result
@@ -4618,7 +4678,10 @@ async function loadExistingResults() {
     const generation = resultsViewGeneration;
     const savedValidationResults = await getValidationResults();
     const savedReviewResults = await getReviewResults();
+    const completionTimes = await chrome.storage.local.get(["validationCompletedAt", "reviewCompletedAt"]);
     if (cancellationInProgress || generation !== resultsViewGeneration) return;
+    resultsCompletedAt.validation = completionTimes.validationCompletedAt;
+    resultsCompletedAt.review = completionTimes.reviewCompletedAt;
     validationResults = savedValidationResults;
     reviewResults = savedReviewResults;
 

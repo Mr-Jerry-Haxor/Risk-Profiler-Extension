@@ -2337,6 +2337,7 @@ export async function reviewBatch(
                             reviewedAt: Date.now()
                         };
                     }
+                    result.completedAt = result.reviewedAt || Date.now();
                     completed += 1;
                     await progressCallback?.({
                         completed, total: assessments.length,

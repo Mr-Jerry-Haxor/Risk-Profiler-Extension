@@ -70,6 +70,12 @@
         close.title = "Close this view. Background processing will continue.";
         close.addEventListener("click", closeModal);
         toolbar.append(title, close);
+        const rerun = document.createElement("button");
+        rerun.type = "button";
+        rerun.className = button.className;
+        rerun.textContent = mode === "review" ? "Re-review" : "Revalidate";
+        rerun.title = "Run this assessment again instead of displaying existing results.";
+        toolbar.append(rerun);
         const status = document.createElement("p");
         status.style.cssText = "padding:16px;font:14px Segoe UI,sans-serif;";
         status.setAttribute("role", "status");
@@ -80,12 +86,18 @@
         modal.showModal();
         const currentModal = modal;
         let replaceButton = null;
-        async function startRequested(replaceExisting = false) {
-            if (modal !== currentModal || location.href !== pageUrl) return;
+        let view = status;
+        let starting = false;
+        async function startRequested(replaceExisting = false, forceNew = false) {
+            if (starting || modal !== currentModal || location.href !== pageUrl) return;
+            starting = true;
+            rerun.disabled = true;
+            if (view !== status) { view.replaceWith(status); view = status; }
+            status.textContent = "Loading assessment…";
             if (replaceButton) replaceButton.disabled = true;
             if (replaceExisting) status.textContent = "Cancelling the previous job and clearing its generated data… Starting the current app next.";
             try {
-                const response = await chrome.runtime.sendMessage({ action: "START_CAIRO_JOB", mode, replaceExisting });
+                const response = await chrome.runtime.sendMessage({ action: "START_CAIRO_JOB", mode, replaceExisting, forceNew });
                 if (modal !== currentModal || location.href !== pageUrl) return;
                 if (!response?.success) {
                     status.textContent = response?.error || "Unable to start the assessment.";
@@ -102,18 +114,23 @@
                     return;
                 }
                 replaceButton?.remove();
+                replaceButton = null;
                 const frame = document.createElement("iframe");
                 frame.title = title.textContent + " results";
                 frame.style.cssText = "display:block;width:100%;height:calc(100% - 56px);border:0;";
                 frame.allow = "clipboard-write";
                 frame.src = chrome.runtime.getURL(`popup.html?view=cairo&job=${encodeURIComponent(response.jobId)}`);
                 status.replaceWith(frame);
+                view = frame;
             } catch (error) {
                 status.textContent = error.message || "The extension is unavailable. Reload the Cairo page after reloading the extension.";
             } finally {
                 if (replaceButton) replaceButton.disabled = false;
+                starting = false;
+                rerun.disabled = false;
             }
         }
+        rerun.addEventListener("click", () => startRequested(false, true));
         await startRequested();
     }
 

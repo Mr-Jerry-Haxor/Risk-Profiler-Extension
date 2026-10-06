@@ -110,12 +110,16 @@ export async function ensureSiteTab(siteId) {
     return findTrustedPageTab(site);
 }
 
-async function recoverSite(site) {
+async function recoverSite(site, responsiveTab = false) {
     const tabs = await siteTabs(site);
     if (!tabs.length) return openSiteTab(site);
     const state = recoveryState.get(site.id) || { failures: 0, lastOpenedAt: Date.now() };
     state.failures++;
     recoveryState.set(site.id, state);
+    // A live Cairo survey is already the correct session context. Retrying an API
+    // failure must not open another Cairo tab or disturb that assessment page.
+    if (site.id === "cairo" && responsiveTab && tabs.some(tab => tab.status === "complete" && !tab.discarded &&
+        tab.url?.startsWith(site.origin + "/") && !/\/(?:login|logon|signin|sign-in|wsso)(?:\/|[?#]|$)/i.test(new URL(tab.url).pathname))) return;
     // Do not navigate a user's survey or repeatedly interrupt a live SSO flow.
     if (state.failures >= 3 && Date.now() - state.lastOpenedAt >= TAB_RECOVERY_COOLDOWN_MS) {
         return openSiteTab(site);
@@ -189,7 +193,7 @@ async function fetchFromTab(url, site, tab, probe = false) {
     });
     const result = results?.[0]?.result;
     if (!result?.ok) {
-        throw requestError(`${site.label}: ${result?.message || "No data response"}`, result?.status || 0, isRetryableStatus(result?.status));
+        throw Object.assign(requestError(`${site.label}: ${result?.message || "No data response"}`, result?.status || 0, isRetryableStatus(result?.status)), { pageResponded: Boolean(result) });
     }
     return result.data;
 }
@@ -198,6 +202,7 @@ async function fetchTrustedJson(url, site, signal, probe = false) {
     let tabs = await siteTabs(site);
     if (!tabs.length) tabs = [await openSiteTab(site)];
     let failure;
+    let responsiveTab = false;
     for (const tab of tabs) {
         if (signal?.aborted || recoveryHandlers.shouldCancel?.()) throw requestError("Request cancelled by user", 0, false);
         try {
@@ -211,10 +216,11 @@ async function fetchTrustedJson(url, site, signal, probe = false) {
             return data;
         } catch (error) {
             if (error.retryable === false) throw error;
+            responsiveTab ||= error.pageResponded === true;
             failure = error;
         }
     }
-    await recoverSite(site);
+    await recoverSite(site, responsiveTab);
     throw failure || requestError(`${site.label} is waiting for sign-in.`);
 }
 

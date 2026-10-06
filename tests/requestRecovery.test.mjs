@@ -10,6 +10,22 @@ const esatsOrigin = "https://esats.web.boeing.com";
 const gtcOrigin = "https://gtc-ecm.web.boeing.com";
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
 
+test("Cairo retries API failures in an existing survey tab without opening duplicates", async () => {
+    const h = await harness();
+    const tab = h.addTab("https://cairois.web.boeing.com");
+    tab.url += "Assessments/41559874/Survey/616901";
+    h.replies.set(cairoUrl, [{ status: 401 }]);
+    const pending = h.context.fetchJson(cairoUrl);
+    const outcome = pending.catch(error => error);
+    await flush();
+    for (let attempt = 0; attempt < 8; attempt++) await h.tick();
+    assert.equal(h.creations.length, 0);
+    h.replies.set(cairoUrl, [{ status: 200, data: { ready: true } }]);
+    await h.tick();
+    assert.equal((await outcome).ready, true);
+    assert.equal(h.creations.length, 0);
+});
+
 async function harness() {
     const tabs = new Map();
     const timers = [];

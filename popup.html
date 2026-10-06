@@ -843,6 +843,15 @@
     </svg>
 </button>
 
+<dialog id="pluginDialog" class="plugin-dialog" aria-labelledby="pluginDialogTitle" aria-describedby="pluginDialogMessage">
+    <h2 id="pluginDialogTitle"></h2>
+    <p id="pluginDialogMessage"></p>
+    <div class="plugin-dialog-actions">
+        <button id="pluginDialogCancel" type="button" class="btn-secondary">Cancel</button>
+        <button id="pluginDialogAccept" type="button" class="btn-primary">OK</button>
+    </div>
+</dialog>
+
 <script src="lib/exceljs.min.js"></script>
 <script type="module"
         src="popup.js">

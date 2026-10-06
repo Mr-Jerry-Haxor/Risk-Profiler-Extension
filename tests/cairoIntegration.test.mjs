@@ -277,6 +277,7 @@ class Element {
     get nextSibling() { return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1]; }
     focus() { this.focused = true; }
     showModal() { this.open = true; }
+    close() { this.open = false; this.onclose?.(); }
 }
 
 async function contentHarness(eligible = true, headerWidths = null, startResponses = []) {
@@ -576,6 +577,7 @@ async function popupHarness(job, emailEnabled = false) {
         renderResults = results => calls.push({ validation: results });
         renderReviewResults = results => calls.push({ review: results });
         openReviewNotesModal = id => calls.push({ notes: id });
+        realOpenReviewEmail = openReviewEmail;
         openReviewEmail = async id => calls.push({ email: id });
         asaSettings = { enabled: ${emailEnabled}, emailTemplateEnabled: ${emailEnabled}, emailTemplateHtml: "<p>Review</p>" };
     `, context);
@@ -712,6 +714,7 @@ test("validation errors remain visible even when the failed job left progress in
 test("plugin reset stops running work before clearing all local data", async () => {
     const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
     const order = [];
+    h.context.showPluginDialog = async () => true;
     h.context.window = { confirm: () => true, setTimeout() {} };
     h.context.chrome.runtime.sendMessage = async message => { order.push(message.action); return { success: true }; };
     h.context.chrome.storage = { local: { clear: async () => { order.push("clear"); } } };
@@ -790,4 +793,160 @@ test("a denied clear preserves displayed results rather than pretending it succe
     await h.context.clearReviewResults();
     assert.equal(vm.runInContext("reviewResults.length", h.context), 1);
     assert.match(h.get("progressText").textContent, /Unable to clear: Another assessment job is running/);
+});
+
+for (const mode of ["validation", "review"]) {
+    test(`Cairo reopens the same running and completed ${mode} without starting another job`, async () => {
+        const h = await workerHarness();
+        const start = await h.send({ action: "START_CAIRO_JOB", mode });
+        await flush();
+        const running = await h.send({ action: "START_CAIRO_JOB", mode });
+        assert.equal(running.jobId, start.jobId);
+        assert.equal(running.reused, true);
+        assert.equal(h.calls.length, 0);
+        h.releaseSession();
+        await flush();
+        const completed = await h.send({ action: "START_CAIRO_JOB", mode });
+        assert.equal(completed.jobId, start.jobId);
+        assert.equal(h.calls.length, 1);
+        const job = (await h.send({ action: "GET_CAIRO_JOB", jobId: start.jobId }, h.viewSender)).job;
+        assert.ok(job.completedAt);
+        assert.ok(job.results[0].completedAt);
+        const rerun = await h.send({ action: "START_CAIRO_JOB", mode, forceNew: true });
+        assert.equal(rerun.success, true);
+        assert.notEqual(rerun.jobId, start.jobId);
+        await flush();
+        assert.equal(h.calls.length, 2);
+    });
+
+    test(`Cairo attaches to a popup ${mode} run and retains its completion time`, async () => {
+        const h = await workerHarness();
+        const assessment = { ...row, assessmentId: row.incompleteAssessmentId, surveyTemplateId: 616901 };
+        await h.send({ action: mode === "review" ? "START_REVIEW" : "START_VALIDATION", assessments: [assessment] }, h.viewSender);
+        await flush();
+        const start = await h.send({ action: "START_CAIRO_JOB", mode });
+        assert.equal(start.reused, true);
+        const reopened = await h.send({ action: "START_CAIRO_JOB", mode });
+        assert.equal(reopened.jobId, start.jobId);
+        assert.equal((await h.send({ action: "GET_CAIRO_JOB", jobId: start.jobId }, h.viewSender)).job.state, "running");
+        h.releaseSession();
+        await flush();
+        const job = (await h.send({ action: "GET_CAIRO_JOB", jobId: start.jobId }, h.viewSender)).job;
+        assert.equal(job.state, "complete");
+        assert.equal(job.results.length, 1);
+        assert.ok(job.results[0].completedAt);
+        assert.equal(h.calls.length, 1);
+    });
+
+    test(`Cairo can open completed popup ${mode} results without any new fetching`, async () => {
+        const h = await workerHarness();
+        const completedAt = Date.now() - 60000;
+        await h.local.set({ [`${mode}Complete`]: true, [`${mode}CompletedAt`]: completedAt,
+            [`${mode}Results`]: [{ assessmentId: 41559874, surveyTemplateId: 616901, completedAt }] });
+        const response = await h.send({ action: "START_CAIRO_JOB", mode });
+        assert.equal(response.reused, true);
+        const job = (await h.send({ action: "GET_CAIRO_JOB", jobId: response.jobId }, h.viewSender)).job;
+        assert.equal(job.completedAt, completedAt);
+        assert.equal(job.results[0].completedAt, completedAt);
+        assert.equal(h.calls.length, 0);
+    });
+}
+
+test("Cairo re-trigger buttons request a fresh run and replace the visible iframe", async () => {
+    for (const [index, label] of [[0, "Revalidate"], [1, "Re-review"]]) {
+        const h = await contentHarness(true, null, [{ success: true, jobId: "old" }, { success: true, jobId: "new" }]);
+        h.document.getElementById("risk-profiler-cairo-actions").children[index].listeners.click({ preventDefault() {} });
+        await flush();
+        const dialog = h.body.children.find(element => element.tagName === "dialog");
+        const rerun = dialog.children[0].children.find(element => element.textContent === label);
+        assert.ok(rerun);
+        assert.match(dialog.children[1].src, /job=old$/);
+        await rerun.listeners.click();
+        assert.equal(h.calls.at(-1).forceNew, true);
+        assert.match(dialog.children[1].src, /job=new$/);
+    }
+});
+
+test("in-plugin confirmation supports accept, cancel and Escape without native dialogs", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    for (const choice of ["accept", "cancel", "escape"]) {
+        const pending = h.context.showPluginDialog("Confirm?", { confirm: true });
+        assert.equal(h.get("pluginDialog").open, true);
+        if (choice === "escape") h.get("pluginDialog").oncancel({ preventDefault() {} });
+        else h.get(choice === "accept" ? "pluginDialogAccept" : "pluginDialogCancel").onclick();
+        assert.equal(await pending, choice === "accept");
+        assert.equal(h.get("pluginDialog").open, false);
+    }
+    const source = await readFile(new URL("../popup.js", import.meta.url), "utf8");
+    assert.doesNotMatch(source, /\b(?:alert|confirm|prompt)\s*\(/);
+});
+
+test("email confirmation cancellation and duplicate clicks cannot open unwanted drafts", async () => {
+    const review = { assessmentId: 41559874, assetName: "Test app", contacts: [] };
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [review] }, true);
+    h.context.validReviewRecipientEmails = () => ["test@example.com"];
+    h.context.replaceTemplatePlaceholders = text => text;
+    h.context.richTextToPlainText = text => text;
+    let copied = 0;
+    let drafts = 0;
+    h.context.copyRichEmailToClipboard = async () => { copied++; };
+    h.context.chrome.tabs = { create: async () => { drafts++; } };
+    const cancelled = h.context.realOpenReviewEmail(41559874);
+    h.get("pluginDialogCancel").onclick();
+    await cancelled;
+    assert.equal(copied, 0);
+    assert.equal(drafts, 0);
+    const accepted = h.context.realOpenReviewEmail(41559874);
+    await h.context.realOpenReviewEmail(41559874);
+    h.get("pluginDialogAccept").onclick();
+    await accepted;
+    assert.equal(copied, 1);
+    assert.equal(drafts, 1);
+});
+
+test("result timestamps use saved completion time and display local timezone", async () => {
+    const h = await popupHarness({ mode: "validation", state: "complete", route, results: [] });
+    const completedAt = Date.UTC(2026, 9, 6, 10, 20, 30);
+    const expected = new Date(completedAt).toLocaleString(undefined, { timeZoneName: "short" });
+    assert.equal(h.context.resultCompletionText({ completedAt }, "Validation"), `Validation completed: ${expected}`);
+    assert.equal(h.context.resultCompletionText({ reviewedAt: completedAt }, "Review"), `Review completed: ${expected}`);
+    assert.match(h.context.resultCompletionText({}, "Review"), /unavailable/);
+});
+
+test("saved Cairo results cannot be reused for another survey template or assessment", async () => {
+    const h = await workerHarness();
+    const oldId = webcrypto.randomUUID();
+    await h.session.set({ [`cairoJob:${oldId}`]: { jobId: oldId, route: { ...route, surveyTemplateId: "123" }, mode: "validation", state: "complete", startedAt: Date.now(), results: [] } });
+    await h.local.set({ validationComplete: true, validationResults: [
+        { assessmentId: 41559874, surveyTemplateId: 123 }, { assessmentId: 999, surveyTemplateId: 616901 }
+    ] });
+    const response = await h.send({ action: "START_CAIRO_JOB", mode: "validation" });
+    assert.equal(response.success, true);
+    assert.notEqual(response.jobId, oldId);
+    assert.notEqual(response.reused, true);
+    h.releaseSession();
+    await flush();
+    assert.equal(h.calls.length, 1);
+});
+
+test("explicitly re-triggering a running Cairo job still requires cancellation approval", async () => {
+    const h = await workerHarness();
+    const first = await h.send({ action: "START_CAIRO_JOB", mode: "review" });
+    await flush();
+    const rerun = await h.send({ action: "START_CAIRO_JOB", mode: "review", forceNew: true });
+    assert.equal(rerun.code, "JOB_RUNNING");
+    assert.equal((await h.send({ action: "GET_CAIRO_JOB", jobId: first.jobId }, h.viewSender)).job.state, "running");
+    h.releaseSession();
+    await flush();
+    assert.equal(h.calls.length, 1);
+});
+
+test("clearing results removes cached Cairo views and completion timestamps for that mode", async () => {
+    const h = await workerHarness();
+    const jobId = webcrypto.randomUUID();
+    await h.session.set({ [`cairoJob:${jobId}`]: { jobId, route, mode: "review", state: "complete", startedAt: Date.now() } });
+    await h.local.set({ reviewResults: [], reviewCompletedAt: Date.now() });
+    assert.equal((await h.send({ action: "CLEAR_REVIEW_RESULTS" }, h.viewSender)).success, true);
+    assert.equal(h.session.values[`cairoJob:${jobId}`], undefined);
+    assert.equal(h.local.values.reviewCompletedAt, undefined);
 });

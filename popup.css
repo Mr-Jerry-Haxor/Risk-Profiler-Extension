@@ -2765,3 +2765,17 @@ body.side-pane .prerequisites-card .tooltip-panel {
     border-radius: 6px;
     border: 1px dashed var(--border);
 }
+.plugin-dialog {
+    width: min(420px, calc(100vw - 48px));
+    padding: 20px;
+    border: 1px solid #ccd4e0;
+    border-radius: 12px;
+    color: #18243a;
+    background: white;
+    box-shadow: 0 16px 60px #0004;
+}
+.plugin-dialog::backdrop { background: #0006; }
+.plugin-dialog h2 { margin-top: 0; font-size: 18px; }
+.plugin-dialog p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plugin-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.result-completed-at { color: #526078; font-size: 12px; margin: 8px 0; }
