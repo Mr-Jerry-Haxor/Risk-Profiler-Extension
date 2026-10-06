@@ -30,6 +30,8 @@ import {
 }
 from "./utils/constants.js";
 
+import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab } from "./api/requestManager.js";
+
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
 let cairoJobRunning = false;
@@ -176,7 +178,24 @@ const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
 
 const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
-const SESSION_RETRY_INTERVAL_MS = 3000;
+const SESSION_RETRY_INTERVAL_MS = 10000;
+
+setRequestRecoveryHandlers({
+    shouldCancel: () => (validationRunning && !reviewRunning && cancellationRequested) ||
+        (reviewRunning && !validationRunning && reviewCancellationRequested),
+    onRetry: async ({ siteName, attempt }) => {
+        const current = `Waiting for ${siteName} data — retry ${attempt}, checking again in 10 seconds`;
+        for (const [running, type] of [[validationRunning, "validation"], [reviewRunning, "review"]]) {
+            if (!running) continue;
+            const key = `${type}Progress`;
+            const data = await chrome.storage.local.get(key);
+            await chrome.storage.local.set({
+                [key]: { ...data[key], current },
+                [`${type}Status`]: current
+            });
+        }
+    }
+});
 
 const prerequisiteTabIds =
     new Map();
@@ -455,6 +474,7 @@ async function runValidationJob(
         );
 
         await waitForPrerequisiteSessions({
+            assetId: assessments[0]?.assetId,
             jobName:
                 "Validation",
             shouldCancel:
@@ -668,6 +688,7 @@ async function runReviewJob(
         );
 
         await waitForPrerequisiteSessions({
+            assetId: assessments[0]?.assetId,
             jobName:
                 "Review",
             shouldCancel:
@@ -1037,19 +1058,35 @@ async function hasEsatsToken(
 }
 
 async function checkPrerequisite(
-    check
+    check,
+    assetId
 ) {
 
     const tabState =
         await tryEnsurePrerequisiteTab(
             check
         );
+    rememberSiteTab(check.id, tabState.tab?.id);
 
     try {
 
+        if (check.id === "esats" && assetId) {
+            // Test the data path used by validation, not the gateway landing page.
+            const url = `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId=${encodeURIComponent(assetId)}`;
+            await fetchJson(url, { useCache: true, refreshCache: true, retryUntilAvailable: false, retries: 1 });
+            return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: url,
+                openedTab: tabState.opened, message: "ESATS data is accessible" };
+        }
+
+        if (check.id === "cairo") {
+            await fetchJson(check.url, { useCache: false, retryUntilAvailable: false, retries: 1 });
+            return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: check.url,
+                openedTab: tabState.opened, message: "Cairo data is accessible" };
+        }
+
         const response =
             await fetch(
-                check.url,
+                check.id === "esats" ? check.openUrl : check.url,
                 {
                     credentials:
                         "include",
@@ -1062,7 +1099,7 @@ async function checkPrerequisite(
 
                     signal:
                         AbortSignal.timeout(
-                            15000
+                            10000
                         )
                 }
             );
@@ -1090,7 +1127,8 @@ async function checkPrerequisite(
                 ? await hasEsatsToken(
                     tabState.tab
                 )
-                : true;
+                : tabState.tab?.status === "complete" &&
+                    tabState.tab.url?.startsWith(check.openUrl);
 
         const passed =
             endpointPassed &&
@@ -1157,15 +1195,15 @@ async function checkPrerequisite(
     }
 }
 
-async function checkPrerequisites() {
+async function checkPrerequisites(previousChecks = [], assetId) {
+
+    if (!assetId) assetId = (await getValue(CONFIG.STORAGE_KEYS.ASSESSMENTS))?.[0]?.assetId;
 
     const checks =
         await Promise.all(
             PREREQUISITE_CHECKS.map(
-                check =>
-                    checkPrerequisite(
-                        check
-                    )
+                check => previousChecks.find(previous => previous.id === check.id && previous.passed) ||
+                    checkPrerequisite(check, assetId)
             )
         );
 
@@ -1206,6 +1244,7 @@ function delay(
 }
 
 async function waitForPrerequisiteSessions({
+    assetId,
     jobName,
     shouldCancel,
     updateJobStatus,
@@ -1214,6 +1253,9 @@ async function waitForPrerequisiteSessions({
     runId,
     startedAt
 }) {
+
+    let previousChecks = [];
+    let attempt = 0;
 
     while (
         true
@@ -1229,7 +1271,9 @@ async function waitForPrerequisiteSessions({
         }
 
         const prerequisites =
-            await checkPrerequisites();
+            await checkPrerequisites(previousChecks, assetId);
+        previousChecks = prerequisites.checks;
+        attempt++;
 
         if (
             prerequisites.passed
@@ -1257,7 +1301,7 @@ async function waitForPrerequisiteSessions({
                 );
 
         const waitingMessage =
-            `Waiting for sign-in: ${waitingFor}`;
+            `Waiting for sign-in/data: ${waitingFor} — check ${attempt}; retrying in 10 seconds`;
 
         await updateJobStatus(
             waitingMessage

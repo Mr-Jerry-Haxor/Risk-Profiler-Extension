@@ -148,7 +148,9 @@ The extension uses Edge-side concurrency:
 
 - Validation concurrency: up to 5 assessments at a time.
 - Review concurrency: up to 3 assessments at a time.
-- Request retry policy: `fetchJson()` retries failed requests up to 3 attempts with a 1 second delay.
+- Session readiness is checked again after **10 seconds**, only for sites that have not yet passed. ESATS readiness uses the selected asset's actual versions endpoint, not the gateway root page; successful checks are retained for the current job.
+- Cairo, ESATS, and GTC data requests retry authentication failures, sign-in HTML, timeouts, network failures, throttling, and server errors after **10 seconds**, without a ten-minute sign-in cutoff. Only the failed endpoint is retried; successful data remains cached. ESATS reads the token again on each attempt, and login redirects reuse the same tracked tab.
+- Waiting progress includes the site and attempt number. Cancellation is checked before the next attempt. Permanent missing-record/bad-request errors are reported instead of retried forever. Non-site requests retain the bounded three-attempt policy.
 - Request cache: successful responses are cached in memory by URL during the current service-worker/runtime life, unless `useCache: false` is explicitly set.
 
 Important distinction:

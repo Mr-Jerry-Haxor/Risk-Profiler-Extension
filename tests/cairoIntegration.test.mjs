@@ -75,6 +75,8 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         chrome, CONFIG, PREREQUISITE_CHECKS, URL, crypto: webcrypto, console,
         parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment,
         setInterval() {}, setTimeout, sessionReady,
+        setRequestRecoveryHandlers() {},
+        rememberSiteTab() {},
         getValue: async key => local.values[key],
         setValue: async (key, value) => local.set({ [key]: value }),
         getAssessmentList: async () => [row],
@@ -90,12 +92,46 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         }
     });
     vm.runInContext(withoutImports(await readFile(new URL("../service_worker.js", import.meta.url), "utf8")), context);
+    const waitForSessions = context.waitForPrerequisiteSessions;
     vm.runInContext("waitForPrerequisiteSessions = async () => { await sessionReady; };", context);
     const sender = { id: chrome.runtime.id, tab: { id: 1 }, frameId: 0, url: routeUrl };
     const viewSender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") + "?view=cairo&job=test" };
     const send = (message, from = sender) => new Promise(resolve => listeners.message(message, from, resolve));
-    return { send, sender, viewSender, local, session, chrome, context, calls, releaseSession };
+    return { send, sender, viewSender, local, session, chrome, context, calls, releaseSession, waitForSessions };
 }
+
+test("session waiting retries only failed sites at ten-second intervals", async () => {
+    const h = await workerHarness();
+    const attempts = { cairo: 0, esats: 0, gtc: 0 };
+    const delays = [];
+    const messages = [];
+    h.context.checkPrerequisite = async check => {
+        attempts[check.id]++;
+        return { id: check.id, name: check.name, passed: check.id !== "esats" || attempts.esats >= 3 };
+    };
+    h.context.delay = async ms => { delays.push(ms); };
+    await h.waitForSessions({ assetId: "40326", jobName: "Validation", shouldCancel: () => false,
+        updateJobStatus: async message => messages.push(message), updateJobProgress: async () => {},
+        total: 1, runId: "test", startedAt: 1 });
+    assert.deepEqual(attempts, { cairo: 1, esats: 3, gtc: 1 });
+    assert.deepEqual(delays, [10000, 10000]);
+    assert.match(messages[0], /ESATS.*check 1.*10 seconds/);
+    assert.match(messages[1], /ESATS.*check 2.*10 seconds/);
+    assert.equal(messages.at(-1), "All prerequisite sessions are active");
+});
+
+test("ESATS readiness probes the asset data endpoint rather than the gateway root", async () => {
+    const h = await workerHarness();
+    h.chrome.tabs.query = async () => [{ id: 1, status: "complete", url: "https://esats.web.boeing.com/" }];
+    const probes = [];
+    h.context.fetchJson = async (url, options) => { probes.push({ url, options }); return { businessApplicationVersions: [] }; };
+    const result = await h.context.checkPrerequisite(PREREQUISITE_CHECKS.find(check => check.id === "esats"), "40326");
+    assert.equal(result.passed, true);
+    assert.match(probes[0].url, /GetBusinessApplicationVersions\?esatsId=40326$/);
+    assert.equal(probes[0].options.retryUntilAvailable, false);
+    assert.equal(probes[0].options.refreshCache, true);
+    assert.equal(probes[0].options.retries, 1);
+});
 
 test("background start succeeds without a popup and waits for sessions before validation", async () => {
     const h = await workerHarness();
