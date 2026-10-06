@@ -21,6 +21,29 @@ const RP7 = {
 
     async validate(context) {
 
+        const esatsValues = [...new Set((context.artifacts || [])
+            .filter(item => Number(item.policyRuleId) === 2)
+            .map(item => String(item.artifactName || "").trim())
+            .filter(Boolean))];
+
+        if (isSaas(context) && esatsValues.length === 0) {
+            return notApplicable(this.id, "SaaS application: ESATS has no JCD value, so code classification validation is not applicable.");
+        }
+
+        const records = context.exportControl || [];
+        const details = records.map(record => {
+            const lookup = record.lookup;
+            const reference = extractReferenceClassification([record]);
+            if (!lookup) return `GTC classification: ${reference || "unavailable"}.`;
+            const attempted = (lookup.attempts || []).map(attempt =>
+                `${attempt.value}: ${attempt.status}${attempt.error ? ` (${attempt.error})` : ""}`
+            ).join("; ");
+            return `ESATS JCD: ${lookup.esatsValue}; GTC reference: ${lookup.gtcValue || "not found"}` +
+                `${lookup.fallback ? " (parent-code fallback)" : ""}; classification: ${reference || "unavailable"}. ` +
+                `Lookup attempts: ${attempted || "none"}.${lookup.error ? ` Error: ${lookup.error}` : ""}`;
+        }).join(" ");
+        const evidence = `ESATS JCD value(s): ${esatsValues.join(", ") || "none"}. ${details}`;
+
         const selectedClassifications =
             getValues(
                 context,
@@ -33,7 +56,7 @@ const RP7 = {
 
             return fail(
                 this.id,
-                "CSIR-CodeClassification is not answered."
+                `CSIR-CodeClassification is not answered. ${evidence}`
             );
         }
 
@@ -50,57 +73,33 @@ const RP7 = {
 
             return fail(
                 this.id,
-                `Unable to determine classification from answer: ${selectedClassifications.join(", ")}.`
+                `Unable to determine classification from answer: ${selectedClassifications.join(", ")}. ${evidence}`
             );
         }
 
 
-        const referenceCode =
-            extractReferenceClassification(
-                context?.exportControl
-            );
-
-        
-
-        /*
-         * SaaS applications must be
-         * Not Subject to Export Controls OR 
-         * match the Export Control reference
-         */
-        if (isSaas(context)) {
-            const isCompliant = selectedCodes.includes("NOT_SUBJECT") || 
-                                (referenceCode && selectedCodes.includes(referenceCode));
-
-            return isCompliant
-                ? pass(this.id, "Application is SaaS and classification is valid based on Export Control reference.")
-                : fail(this.id, `Application is SaaS, but selected classification (${selectedClassifications.join(", ")}) does not match required criteria.`);
+        const references = records.map(record => extractReferenceClassification([record]));
+        const missingValues = esatsValues.filter(value => !records.some(record => record.lookup?.esatsValue === value));
+        // Legacy contexts have no lookup metadata; preserve their mapped reference support.
+        const missingLookup = records.some(record => record.lookup) && missingValues.length > 0;
+        if (esatsValues.length > 0 && (records.length === 0 || references.some(value => !value) || missingLookup)) {
+            return fail(this.id, `Unable to determine Export Control classification for the ESATS JCD. ${evidence}` +
+                (missingLookup ? ` Missing GTC lookup details for: ${missingValues.join(", ")}.` : ""));
+        }
+        if (references.length === 0 || references.every(value => !value)) {
+            return notApplicable(this.id, `Unable to determine Export Control classification from GTC. ${evidence}`);
         }
 
-        
-
-        if (
-            !referenceCode
-        ) {
-
-            return notApplicable(
-                this.id,
-                "Unable to determine Export Control classification from GTC."
-            );
-        }
-
-        const matches =
-            selectedCodes.includes(
-                referenceCode
-            );
+        const matches = references.every(reference => reference && selectedCodes.includes(reference));
 
         return matches
             ? pass(
                 this.id,
-                `Selected classification matches Export Control reference (${referenceCode}).`
+                `Selected classification (${selectedClassifications.join(", ")}) matches Export Control reference (${[...new Set(references)].join(", ")}). ${evidence}`
             )
             : fail(
                 this.id,
-                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control reference (${referenceCode}).`
+                `Selected classification (${selectedClassifications.join(", ")}) does not match Export Control reference (${[...new Set(references)].join(", ")}). ${evidence}`
             );
     }
 };

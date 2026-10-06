@@ -775,6 +775,13 @@ The `reason` text is important. It is shown in:
 - Excel export
 - Summary/error reporting
 
+### RP4 and RP7 applicability and GTC fallback
+
+- **RP4:** SaaS applications are `NA` regardless of device count. Other application types keep the existing device-count checks.
+- **RP7:** SaaS applications with no ESATS JCD value are `NA`. When an ESATS JCD exists, the Risk Profiler code-classification answer must match the mapped GTC classification; matching answers pass and mismatches fail. Selecting "Not Subject" does not automatically pass a SaaS application.
+- GTC lookup tries the exact JCD first. If it returns no terms or HTTP 404, it tries progressively shorter dotted parent codes, for example `5D002.c.1` → `5D002.c` → `5D002`. Authentication/network failures retain the existing retry workflow rather than selecting a parent based on an inaccessible endpoint.
+- RP7 result reasons show the original ESATS JCD, the GTC code used, whether parent fallback occurred, the mapped classification, and lookup attempts/errors. If a JCD exists but no usable exact/parent mapping is available, RP7 fails with details instead of silently discarding the lookup failure. These reasons also appear in the Excel export.
+
 ### Required Questions
 
 If a checkpoint depends on one or more survey questions, add `requiredQuestions`.

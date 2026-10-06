@@ -80,20 +80,9 @@ const RP4 = {
             )
         ) {
 
-            const deviceCounts =
-                getValues(
-                    context,
-                    "CSIR-DeviceCount"
-                );
-
-            const option =
-                deviceCounts.length > 0
-                    ? deviceCounts[0]
-                    : "not determined";
-
-            return pass(
+            return notApplicable(
                 this.id,
-                `SaaS application. Device count: ${option}.`
+                "Device count validation is not applicable to SaaS applications."
             );
         }
 
