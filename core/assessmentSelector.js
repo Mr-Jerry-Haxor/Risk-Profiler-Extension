@@ -331,3 +331,45 @@ export function selectAll(
             x.assessmentId
     );
 }
+
+export function prioritizeSelectedAssessments(
+    assessments,
+    selectedAssessmentIds
+) {
+
+    const selectedIds =
+        new Set(
+            selectedAssessmentIds
+        );
+
+    return assessments
+        .map(
+            (assessment, index) => ({
+                assessment,
+                index
+            })
+        )
+        .sort(
+            (left, right) => {
+
+                const selectedDifference =
+                    Number(
+                        selectedIds.has(
+                            right.assessment.assessmentId
+                        )
+                    ) -
+                    Number(
+                        selectedIds.has(
+                            left.assessment.assessmentId
+                        )
+                    );
+
+                return selectedDifference ||
+                    left.index - right.index;
+            }
+        )
+        .map(
+            item =>
+                item.assessment
+        );
+}

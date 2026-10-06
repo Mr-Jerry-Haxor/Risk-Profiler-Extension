@@ -54,6 +54,11 @@ const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
 
 const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
+const SESSION_RETRY_INTERVAL_MS = 3000;
+
+const prerequisiteTabIds =
+    new Map();
+
 async function configurePluginLayout(
     requestedMode
 ) {
@@ -302,6 +307,9 @@ async function runValidationJob(
             validationError:
                 null,
 
+            lastAction:
+                "validation",
+
             validationProgress: {
                 runId:
                     currentValidationId,
@@ -323,6 +331,23 @@ async function runValidationJob(
         await updateStatus(
             "Validation started"
         );
+
+        await waitForPrerequisiteSessions({
+            jobName:
+                "Validation",
+            shouldCancel:
+                () => cancellationRequested,
+            updateJobStatus:
+                updateStatus,
+            updateJobProgress:
+                updateProgress,
+            total:
+                assessments.length,
+            runId:
+                currentValidationId,
+            startedAt:
+                validationStartedAt
+        });
 
         const results =
             await validateBatch(
@@ -520,6 +545,23 @@ async function runReviewJob(
             "Review started"
         );
 
+        await waitForPrerequisiteSessions({
+            jobName:
+                "Review",
+            shouldCancel:
+                () => reviewCancellationRequested,
+            updateJobStatus:
+                updateReviewStatus,
+            updateJobProgress:
+                updateReviewProgress,
+            total:
+                assessments.length,
+            runId:
+                currentReviewId,
+            startedAt:
+                reviewStartedAt
+        });
+
         const results =
             await reviewBatch(
 
@@ -711,53 +753,110 @@ function isLoginRedirect(
 }
 
 async function ensurePrerequisiteTab(
-    check,
-    forceNew = false
+    check
 ) {
 
     const openUrl =
         check.openUrl ||
         check.url;
 
+    const tabs =
+        await chrome.tabs.query({
+            url:
+                `${openUrl}*`
+        });
+
+    const matchingTab =
+        tabs.find(
+            tab =>
+                tab.id
+        );
+
     if (
-        !forceNew
+        matchingTab
     ) {
 
-        const tabs =
-            await chrome.tabs.query({
-                url:
-                    `${openUrl}*`
-            });
+        prerequisiteTabIds.set(
+            check.id,
+            matchingTab.id
+        );
 
-        if (
-            tabs.some(
-                tab =>
-                    tab.id
-            )
-        ) {
+        return {
+            tab:
+                matchingTab,
+            opened:
+                false
+        };
+    }
 
-            return false;
+    const trackedTabId =
+        prerequisiteTabIds.get(
+            check.id
+        );
+
+    if (
+        trackedTabId
+    ) {
+
+        try {
+
+            const trackedTab =
+                await chrome.tabs.get(
+                    trackedTabId
+                );
+
+            if (
+                trackedTab?.id
+            ) {
+
+                return {
+                    tab:
+                        trackedTab,
+                    opened:
+                        false
+                };
+            }
+
+        } catch {
+
+            prerequisiteTabIds.delete(
+                check.id
+            );
         }
     }
 
-    await chrome.tabs.create({
-        url:
-            openUrl
-    });
+    const openedTab =
+        await chrome.tabs.create({
+            url:
+                openUrl
+        });
 
-    return true;
+    if (
+        openedTab?.id
+    ) {
+
+        prerequisiteTabIds.set(
+            check.id,
+            openedTab.id
+        );
+    }
+
+    return {
+        tab:
+            openedTab,
+        opened:
+            true
+    };
 }
 
 async function tryEnsurePrerequisiteTab(
-    check,
-    forceNew = false
+    check
 ) {
 
     try {
 
         return await ensurePrerequisiteTab(
-            check,
-            forceNew
+            check
         );
 
     } catch (error) {
@@ -767,6 +866,50 @@ async function tryEnsurePrerequisiteTab(
             error
         );
 
+        return {
+            tab:
+                null,
+            opened:
+                false
+        };
+    }
+}
+
+async function hasEsatsToken(
+    tab
+) {
+
+    if (
+        !tab?.id ||
+        tab.status !== "complete"
+    ) {
+
+        return false;
+    }
+
+    try {
+
+        const results =
+            await chrome.scripting.executeScript({
+                target: {
+                    tabId:
+                        tab.id
+                },
+                world:
+                    "MAIN",
+                func:
+                    () =>
+                        Boolean(
+                            localStorage.getItem(
+                                "esatsToken"
+                            )
+                        )
+            });
+
+        return results?.[0]?.result === true;
+
+    } catch {
+
         return false;
     }
 }
@@ -774,6 +917,11 @@ async function tryEnsurePrerequisiteTab(
 async function checkPrerequisite(
     check
 ) {
+
+    const tabState =
+        await tryEnsurePrerequisiteTab(
+            check
+        );
 
     try {
 
@@ -788,7 +936,12 @@ async function checkPrerequisite(
                         "no-store",
 
                     redirect:
-                        "follow"
+                        "follow",
+
+                    signal:
+                        AbortSignal.timeout(
+                            15000
+                        )
                 }
             );
 
@@ -805,22 +958,24 @@ async function checkPrerequisite(
             response.status === 401 ||
             response.status === 403;
 
-        const passed =
+        const endpointPassed =
             !redirectedToLogin &&
             !unauthorized &&
             response.status < 500;
 
-        const openedTab =
+        const pagePassed =
             check.id === "esats"
-                ? await tryEnsurePrerequisiteTab(
-                    check,
-                    !passed &&
-                    (
-                        redirectedToLogin ||
-                        unauthorized
-                    )
+                ? await hasEsatsToken(
+                    tabState.tab
                 )
-                : false;
+                : true;
+
+        const passed =
+            endpointPassed &&
+            pagePassed;
+
+        const openedTab =
+            tabState.opened;
 
         return {
 
@@ -842,19 +997,18 @@ async function checkPrerequisite(
             message:
                 passed
                     ? `${check.name} session is active`
+                    : check.id === "esats" &&
+                        !pagePassed
+                        ? `${check.name} is waiting for sign-in${openedTab ? "; opened ESATS in a new tab" : ""}`
                     : redirectedToLogin
-                        ? `${check.name} redirected to sign-on${openedTab ? "; opened ESATS in a new tab" : ""}`
-                        : `${check.name} returned HTTP ${response.status}${openedTab ? "; opened ESATS in a new tab" : ""}`
+                        ? `${check.name} redirected to sign-on${openedTab ? `; opened ${check.name} in a new tab` : ""}`
+                        : `${check.name} returned HTTP ${response.status}${openedTab ? `; opened ${check.name} in a new tab` : ""}`
         };
 
     } catch (error) {
 
         const openedTab =
-            check.id === "esats"
-                ? await tryEnsurePrerequisiteTab(
-                    check
-                )
-                : false;
+            tabState.opened;
 
         return {
 
@@ -876,7 +1030,7 @@ async function checkPrerequisite(
             openedTab,
 
             message:
-                `${error.message}${openedTab ? "; opened ESATS in a new tab" : ""}`
+                `${error.message}${openedTab ? `; opened ${check.name} in a new tab` : ""}`
         };
     }
 }
@@ -914,6 +1068,93 @@ async function checkPrerequisites() {
     });
 
     return result;
+}
+
+function delay(
+    milliseconds
+) {
+
+    return new Promise(
+        resolve =>
+            setTimeout(
+                resolve,
+                milliseconds
+            )
+    );
+}
+
+async function waitForPrerequisiteSessions({
+    jobName,
+    shouldCancel,
+    updateJobStatus,
+    updateJobProgress,
+    total,
+    runId,
+    startedAt
+}) {
+
+    while (
+        true
+    ) {
+
+        if (
+            shouldCancel()
+        ) {
+
+            throw new Error(
+                `${jobName} cancelled by user`
+            );
+        }
+
+        const prerequisites =
+            await checkPrerequisites();
+
+        if (
+            prerequisites.passed
+        ) {
+
+            await updateJobStatus(
+                "All prerequisite sessions are active"
+            );
+
+            return;
+        }
+
+        const waitingFor =
+            prerequisites.checks
+                .filter(
+                    check =>
+                        !check.passed
+                )
+                .map(
+                    check =>
+                        check.name
+                )
+                .join(
+                    ", "
+                );
+
+        const waitingMessage =
+            `Waiting for sign-in: ${waitingFor}`;
+
+        await updateJobStatus(
+            waitingMessage
+        );
+
+        await updateJobProgress({
+            runId,
+            completed:
+                0,
+            total,
+            current:
+                waitingMessage,
+            startedAt
+        });
+
+        await delay(
+            SESSION_RETRY_INTERVAL_MS
+        );
+    }
 }
 
 /*

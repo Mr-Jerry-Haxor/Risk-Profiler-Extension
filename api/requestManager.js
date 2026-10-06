@@ -14,7 +14,13 @@ const DEFAULT_OPTIONS = {
     useCache: true
 };
 
-let trustedTabCreation = null;
+const TRUSTED_PAGE_RETRY_DELAY_MS = 3000;
+
+const TRUSTED_PAGE_WAIT_TIMEOUT_MS =
+    10 * 60 * 1000;
+
+const trustedTabCreations =
+    new Map();
 
 
 
@@ -155,24 +161,34 @@ async function findTrustedPageTab(pageOrigin) {
     }
 
     if (
-        !trustedTabCreation
+        !trustedTabCreations.has(
+            pageOrigin
+        )
     ) {
 
-        trustedTabCreation =
+        const creation =
             createTab({
                 url:
                     `${pageOrigin}/`
             })
                 .finally(
                     () => {
-                        trustedTabCreation =
-                            null;
+                        trustedTabCreations.delete(
+                            pageOrigin
+                        );
                     }
                 );
+
+        trustedTabCreations.set(
+            pageOrigin,
+            creation
+        );
     }
 
     const openedTab =
-        await trustedTabCreation;
+        await trustedTabCreations.get(
+            pageOrigin
+        );
 
     return {
         tab:
@@ -219,7 +235,10 @@ async function fetchFromTrustedPage(
         pageOrigin,
         label,
         useBearerToken
-    }
+    },
+    deadline =
+        Date.now() +
+        TRUSTED_PAGE_WAIT_TIMEOUT_MS
 ) {
 
     if (!hasChromeScripting()) {
@@ -235,11 +254,31 @@ async function fetchFromTrustedPage(
         );
 
     if (
-        trustedPage.opened
+        trustedPage.opened ||
+        trustedPage.tab?.status !== "complete"
     ) {
 
-        throw new Error(
-            `No ${label} tab was open. Opened ${pageOrigin}/ in a new tab; sign in, then retry.`
+        if (
+            Date.now() >= deadline
+        ) {
+
+            throw new Error(
+                `Timed out waiting for ${label} sign-in at ${pageOrigin}/.`
+            );
+        }
+
+        await sleep(
+            TRUSTED_PAGE_RETRY_DELAY_MS
+        );
+
+        return fetchFromTrustedPage(
+            url,
+            {
+                pageOrigin,
+                label,
+                useBearerToken
+            },
+            deadline
         );
     }
 
@@ -433,6 +472,25 @@ async function fetchFromTrustedPage(
     }
 
     if (!result.ok) {
+
+        if (
+            Date.now() < deadline
+        ) {
+
+            await sleep(
+                TRUSTED_PAGE_RETRY_DELAY_MS
+            );
+
+            return fetchFromTrustedPage(
+                url,
+                {
+                    pageOrigin,
+                    label,
+                    useBearerToken
+                },
+                deadline
+            );
+        }
 
         const authHint =
             result.hasAuthorization

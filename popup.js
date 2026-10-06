@@ -10,6 +10,7 @@ from "./storage/storage.js";
 import {
     filterAssessments,
     isIncompleteAssessment,
+    prioritizeSelectedAssessments,
     selectAll
 }
 from "./core/assessmentSelector.js";
@@ -1843,21 +1844,10 @@ function renderAssessments() {
     container.innerHTML = "";
 
     const visibleAssessments =
-        filteredAssessments
-            .slice()
-            .sort(
-                (left, right) =>
-                    Number(
-                        selectedAssessmentIds.includes(
-                            right.assessmentId
-                        )
-                    ) -
-                    Number(
-                        selectedAssessmentIds.includes(
-                            left.assessmentId
-                        )
-                    )
-            );
+        prioritizeSelectedAssessments(
+            filteredAssessments,
+            selectedAssessmentIds
+        );
 
     visibleAssessments.forEach(
         assessment => {
@@ -2099,7 +2089,7 @@ function bindCheckboxes() {
                             );
                     }
 
-                    updateSelectedCount();
+                    renderAssessments();
                 }
             );
         });
@@ -4424,7 +4414,7 @@ function renderPrerequisites(
                 check.passed
                     ? "Active"
                     : check.openedTab
-                        ? "Needs sign-in (ESATS tab opened)"
+                        ? `Needs sign-in (${check.name} tab opened)`
                         : "Needs sign-in";
         }
 

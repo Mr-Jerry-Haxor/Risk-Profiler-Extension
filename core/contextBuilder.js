@@ -1,7 +1,13 @@
 import {
-    getAssessmentContext
+    getAssessmentContext,
+    getBusinessApplicationContactDetailsSummary
 }
 from "../api/cairoApi.js";
+
+import {
+    getAsaName
+}
+from "./contactUtils.js";
 
 import {
     getReviewSummary
@@ -31,7 +37,8 @@ export async function buildContext(
     const [
         cairo,
         review,
-        esats
+        esats,
+        contacts
     ] =
     await Promise.all([
 
@@ -45,6 +52,12 @@ export async function buildContext(
 
         getAllArtifacts(
             assetId
+        ),
+
+        getBusinessApplicationContactDetailsSummary(
+            assetId
+        ).catch(
+            () => []
         )
     ]);
 
@@ -55,8 +68,14 @@ export async function buildContext(
 
     return {
 
-        application:
-            assessment,
+        application: {
+            ...assessment,
+            asaName:
+                getAsaName(
+                    assessment,
+                    contacts
+                )
+        },
 
         assessment:
             cairo.detail,

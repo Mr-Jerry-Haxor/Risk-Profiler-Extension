@@ -1,4 +1,9 @@
 
+import {
+    getAsaName
+}
+from "../core/contactUtils.js";
+
 const TEMPLATE_PATH =
     chrome.runtime.getURL(
         "assets/RP_Checklist_2.6.1_encoded.txt"
@@ -177,7 +182,7 @@ ASSESSMENT SHEETS
 function populateAssessmentSheet(worksheet, result, assessment) {
     worksheet.getCell("C2").value = assessment.assetName || "";
     worksheet.getCell("C3").value = assessment.assetId || "";
-    worksheet.getCell("C4").value = assessment.appMgrName || "";
+    worksheet.getCell("C4").value = getAsaName(assessment);
     worksheet.getCell("C5").value = formatDate(new Date());
 
     const rpMap = discoverRpRows(worksheet);
