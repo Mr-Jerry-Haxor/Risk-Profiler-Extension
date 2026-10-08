@@ -87,11 +87,11 @@ const DEFAULT_EMAIL_SUBJECT_TEMPLATE =
 
 const DEFAULT_EMAIL_TEMPLATE_HTML = [
     "<p>Hello All,</p>",
-    "<p>I am the Application Security Administrator (ASA) for <strong>{{ASSET_NAME}}- Risk Profiler</strong> You are receiving this email as you are identified in ESATS as the Application Manager, Business System Manager, for the <strong>{{ASSET_NAME}} application</strong>. If you are not the correct point of contact, please provide current AM/BSM names and have ESATS updated.</p>",
-    "<p>As part of our annual review process, I am reviewing {{ASSET_NAME}} - RISK PROFILER. My review notes have been attached, kindly answer unanswered questions appended in the attached document.</p>",
+    "<p>I am the Application Security Administrator (ASA) for <strong>{{ASSET_NAME}}- Risk Profiler</strong> You are receiving this email as you are identified in ESATS as the Application Manager, Business System Manager, for the <strong>{{ASSET_NAME}} application</strong>. If you are not the correct point of contact, please provide current AM/BSM names and have ESATS updated.</p><br><br>",
+    "<p>As part of our annual review process, I am reviewing {{ASSET_NAME}} - RISK PROFILER. My review notes have been attached, kindly answer unanswered questions appended in the attached document.</p><br><br>",
     "<p>Please use the below URL to review the Risk Profiler of {{ASSET_NAME}} from previous assessment and let me know if you would like to make any changes or modifications this time.</p>",
-    "<p><a href=\"https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View\">https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View</a></p>",
-    "<p>I’d be happy to schedule a meeting to review {{ASSET_NAME}} – Risk Profiler and address any questions. Please share your availability, or let me know if you would prefer to continue the discussion by email. I’m happy to proceed in whichever format works best for you.</p>",
+    "<p><a href=\"https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View\">https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View</a></p><br><br>",
+    "<p>I’d be happy to schedule a meeting to review {{ASSET_NAME}} – Risk Profiler and address any questions. Please share your availability, or let me know if you would prefer to continue the discussion by email. I’m happy to proceed in whichever format works best for you.</p><br><br>",
     "<p>Please let me know your preference so I can proceed accordingly. If you have any questions or need clarification on any point, please feel free to reach out.</p>"
 ].join("");
 
