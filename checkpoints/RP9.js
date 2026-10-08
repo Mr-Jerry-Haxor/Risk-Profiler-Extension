@@ -33,8 +33,7 @@ const RP9 = {
     name: "Hosting selection matches internal/external/hybrid architecture",
     category: "Network and Hosting",
     requiredQuestions: [
-    "CSIR-Hosting",
-    "CSIR-IntExtApp"
+    "CSIR-Hosting"
     ],
 
     async validate(context) {
@@ -78,8 +77,12 @@ const RP9 = {
             );
         }
 
-        // A question can be present in the template without having an answer yet.
-        // Only a genuinely missing question makes this checkpoint not applicable.
+        const intExtValues =
+            getValues(
+                context,
+                "CSIR-IntExtApp"
+            );
+
         const intExtQuestionFound =
             questionExists(
                 context,
@@ -93,12 +96,13 @@ const RP9 = {
             );
 
         if (
-            !intExtQuestionFound
+            !intExtQuestionFound ||
+            intExtValues.length === 0
         ) {
 
             return notApplicable(
                 this.id,
-                "CSIR-Hosting is answered but CSIR-IntExtApp question was not found in this assessment."
+                `CSIR-INT-EXT-APP did not appear in the survey or was not answered, but CSIR-Hosting was selected: ${hosting.join(", ")}.`
             );
         }
 

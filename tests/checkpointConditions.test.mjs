@@ -81,16 +81,24 @@ test("RP9 is NA for None, Other, or a missing CSIR-IntExtApp question", async ()
         questionMap: new Map([["CSIR-Hosting", {}]])
     });
     assert.equal(missing.status, "NA");
-    assert.match(missing.reason, /question was not found/i);
+    assert.match(missing.reason, /CSIR-INT-EXT-APP did not appear/i);
+    assert.match(missing.reason, /Boeing Enterprise Network \(BEN\)/);
+    assert.deepEqual(RP9.requiredQuestions, ["CSIR-Hosting"]);
 });
 
-test("RP9 fails a mapped hosting selection when CSIR-IntExtApp exists but is unanswered", async () => {
+test("RP9 is NA and lists hosting selections when CSIR-IntExtApp exists but is unanswered", async () => {
     const result = await RP9.validate({
-        answers: [answer("CSIR-Hosting", "Boeing Enterprise Network (BEN)")],
+        answers: [answer(
+            "CSIR-Hosting",
+            "Boeing Enterprise Network (BEN)",
+            "Third Party Vendor (e.g. SaaS/IaaS/PaaS)"
+        )],
         questionMap: new Map([["CSIR-Hosting", {}], ["CSIR-IntExtApp", {}]])
     });
-    assert.equal(result.status, "FAIL");
-    assert.match(result.reason, /requires CSIR-IntExtApp = Internal/);
+    assert.equal(result.status, "NA");
+    assert.match(result.reason, /was not answered/i);
+    assert.match(result.reason, /Boeing Enterprise Network \(BEN\)/);
+    assert.match(result.reason, /Third Party Vendor \(e\.g\. SaaS\/IaaS\/PaaS\)/);
 });
 
 async function lookupHarness(replies) {
