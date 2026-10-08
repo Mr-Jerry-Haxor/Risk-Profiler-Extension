@@ -1,12 +1,12 @@
 import {
     fail,
+    getAnswer,
     getValues,
-    hasAnswer,
     includesValue,
     normalize,
     notApplicable,
-    valueContainsAny,
-    pass
+    pass,
+    questionExists
 }
 from "./helpers.js";
 
@@ -78,12 +78,22 @@ const RP9 = {
             );
         }
 
-        // Case 1: CSIR-IntExtApp question is not present in the assessment at all — not applicable
-        if (
-            !hasAnswer(
+        // A question can be present in the template without having an answer yet.
+        // Only a genuinely missing question makes this checkpoint not applicable.
+        const intExtQuestionFound =
+            questionExists(
                 context,
                 "CSIR-IntExtApp"
-            )
+            ) ||
+            Boolean(
+                getAnswer(
+                    context,
+                    "CSIR-IntExtApp"
+                )
+            );
+
+        if (
+            !intExtQuestionFound
         ) {
 
             return notApplicable(
@@ -102,25 +112,6 @@ const RP9 = {
                     )
             );
 
-        const hasExternalAppType =
-            valueContainsAny(
-                context,
-                "CSIR-AppType",
-                [
-                    "Software-as-a-Service",
-                    "SaaS",
-                    "Infrastructure-as-a-Service",
-                    "IaaS",
-                    "Platform-as-a-Service",
-                    "PaaS"
-                ]
-            );
-
-        const hasExternal =
-            hasExternalHosting ||
-            hasExternalAppType;
-
-        
         const hasInternal =
             hosting.some(
                 value =>
@@ -135,15 +126,8 @@ const RP9 = {
                     )
             );
 
-        // New requirement: If CSIR-IntExtApp is Hybrid, pass if hosting is either Internal or External
-        const isHybrid = includesValue(context, "CSIR-IntExtApp", "Hybrid");
-        if (isHybrid && (hasExternalHosting || hasInternal)) {
-            return pass(this.id, "Hybrid architecture identified with valid hosting selection.");
-        }
-
-
         if (
-            hasExternal &&
+            hasExternalHosting &&
             hasInternal
         ) {
 
@@ -163,7 +147,7 @@ const RP9 = {
         }
 
         if (
-            hasExternal
+            hasExternalHosting
         ) {
 
             return includesValue(

@@ -16,7 +16,9 @@ Each new run verifies the incomplete assessment against the primary assessment l
 
 Validation includes **Export Excel**. Review includes the existing review basis, question selection, ASA Notes, Word download, and **Send Email**. Email requires ASA Mode and a configured email template in the plugin's layout settings, as it does in the regular plugin. Result snapshots are isolated per run and retained in extension session storage (up to ten views); reloading the extension expires them. Only one Cairo job can start at a time, and it cannot overlap a running popup job.
 
-Use `{{LAST_ASSESSMENT_ID}}` in the email subject or body to insert the application's last assessment ID. It is available as **Last Assessment ID** in the template variable selector and resolves to blank when no last assessment ID is available.
+ASA Mode remains disabled by default. Enabling it automatically enables the email template and supplies the built-in annual Risk Profiler review message when no custom body exists. The default preserves its bold application references and includes a clickable prior-assessment Cairo URL using `{{LAST_ASSESSMENT_ID}}` and `{{LAST_SURVEY_TEMPLATE_ID}}`. Existing customized subjects and bodies are preserved.
+
+Use `{{LAST_ASSESSMENT_ID}}` in the email subject or body to insert the application's last assessment ID. Use `{{LAST_SURVEY_TEMPLATE_ID}}` for that last assessment's survey template ID, retrieved from the Cairo assessment-detail endpoint using `lastAssessmentId`. Both are available in the template variable selector and resolve to blank when their values are unavailable.
 
 After rebuilding, reload the extension from `dist/` and refresh existing Cairo tabs to install the content script. Use `npm test` for the integration regression checks. Live Cairo/WSSO sign-in and site-specific frame/clipboard policies require verification in a signed-in Edge session.
 

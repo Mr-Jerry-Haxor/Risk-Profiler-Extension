@@ -5,6 +5,10 @@ import { readFile } from "node:fs/promises";
 import RP4 from "../checkpoints/RP4.js";
 import RP7 from "../checkpoints/RP7.js";
 import RP3 from "../checkpoints/RP3.js";
+import RP9 from "../checkpoints/RP9.js";
+import RP12 from "../checkpoints/RP12.js";
+import RP13 from "../checkpoints/RP13.js";
+import RP14 from "../checkpoints/RP14.js";
 import { URLS } from "../utils/constants.js";
 import { replaceTokens } from "../utils/helpers.js";
 
@@ -16,6 +20,77 @@ const mapping = (group = "EARN") => ({ terms: [{ term: { displayName: "test",
 const context = (type = "SaaS", classification = "EAR-NLR", values = ["5D002.c.1"], records = [mapping()]) => ({
     answers: [answer("CSIR-AppType", type), answer("CSIR-CodeClassification", classification)],
     artifacts: values.map(value => artifact(value)), exportControl: records
+});
+
+test("RP12-RP14 are NA when their survey answer is missing even if service accounts are Yes", async () => {
+    const data = { answers: [answer("CSIR-SvcAcct", "Yes")] };
+    for (const checkpoint of [RP12, RP13, RP14]) {
+        const result = await checkpoint.validate(data);
+        assert.equal(result.status, "NA", checkpoint.id);
+        assert.match(result.reason, /not found or is not answered/i);
+    }
+});
+
+test("RP12-RP14 do not treat an explicit non-Yes-No selection as a missing answer", async () => {
+    for (const [checkpoint, questionId] of [
+        [RP12, "CSIR-SCR-NonpersonAcct-Disable"],
+        [RP13, "CSIR-SCR-NonpersonAcct-Restricted"],
+        [RP14, "CSIR-SCR-NonpersonAcct-Managed"]
+    ]) {
+        const data = { answers: [answer("CSIR-SvcAcct", "Yes"), answer(questionId, "N/A")] };
+        assert.equal((await checkpoint.validate(data)).status, "FAIL", checkpoint.id);
+    }
+});
+
+test("RP9 requires External, Internal, or Hybrid based only on the hosting selections", async () => {
+    const rp9Context = (hosting, architecture, appType) => ({
+        answers: [
+            answer("CSIR-Hosting", ...hosting),
+            answer("CSIR-IntExtApp", architecture),
+            ...(appType ? [answer("CSIR-AppType", appType)] : [])
+        ]
+    });
+
+    assert.equal((await RP9.validate(rp9Context(
+        ["External (Non-Boeing) / External Boeing Cloud Hosted"], "External"
+    ))).status, "PASS");
+    assert.equal((await RP9.validate(rp9Context(
+        ["Boeing Enterprise Network (BEN)"], "Internal", "SaaS"
+    ))).status, "PASS", "SaaS must not add an external hosting classification");
+    assert.equal((await RP9.validate(rp9Context(
+        ["Boeing Enterprise Network (BEN)", "Third Party Vendor (e.g. SaaS/IaaS/PaaS)"], "Hybrid"
+    ))).status, "PASS");
+    assert.equal((await RP9.validate(rp9Context(
+        ["Boeing Enterprise Network (BEN)"], "Hybrid"
+    ))).status, "FAIL", "internal-only hosting requires Internal");
+    assert.equal((await RP9.validate(rp9Context(
+        ["Third Party Vendor (e.g. SaaS/IaaS/PaaS)"], "Hybrid"
+    ))).status, "FAIL", "external-only hosting requires External");
+});
+
+test("RP9 is NA for None, Other, or a missing CSIR-IntExtApp question", async () => {
+    for (const hosting of ["None", "Other"]) {
+        const result = await RP9.validate({
+            answers: [answer("CSIR-Hosting", hosting), answer("CSIR-IntExtApp", "Internal")]
+        });
+        assert.equal(result.status, "NA", hosting);
+    }
+
+    const missing = await RP9.validate({
+        answers: [answer("CSIR-Hosting", "Boeing Enterprise Network (BEN)")],
+        questionMap: new Map([["CSIR-Hosting", {}]])
+    });
+    assert.equal(missing.status, "NA");
+    assert.match(missing.reason, /question was not found/i);
+});
+
+test("RP9 fails a mapped hosting selection when CSIR-IntExtApp exists but is unanswered", async () => {
+    const result = await RP9.validate({
+        answers: [answer("CSIR-Hosting", "Boeing Enterprise Network (BEN)")],
+        questionMap: new Map([["CSIR-Hosting", {}], ["CSIR-IntExtApp", {}]])
+    });
+    assert.equal(result.status, "FAIL");
+    assert.match(result.reason, /requires CSIR-IntExtApp = Internal/);
 });
 
 async function lookupHarness(replies) {

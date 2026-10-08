@@ -2154,6 +2154,10 @@ async function buildReviewResult(
             assessment.assetName,
         status,
         lastAssessmentId,
+        // loadQuestionsAndDetail(lastAssessmentId) retrieves this from the
+        // assessment-detail endpoint; it is not inferred from the parent row.
+        lastSurveyTemplateId:
+            oldContext.surveyTemplateId,
         incompleteAssessmentId,
         reviewMode:
             effectiveReviewMode,
@@ -2165,6 +2169,8 @@ async function buildReviewResult(
                     ? "Incomplete assessment review uses the incomplete survey template."
                     : "Completed assessment review uses the latest released survey template.",
             oldSurveyTemplateId:
+                oldContext.surveyTemplateId,
+            lastSurveyTemplateId:
                 oldContext.surveyTemplateId,
             newSurveyTemplateId:
                 newContext.surveyTemplateId,

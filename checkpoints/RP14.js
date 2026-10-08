@@ -1,6 +1,6 @@
 import {
     fail,
-    hasRiskProfilerApprovals,
+    getValues,
     includesValue,
     isYes,
     notApplicable,
@@ -61,20 +61,21 @@ const RP14 = {
         }
 
         if (
-            hasRiskProfilerApprovals(
-                context
-            )
+            getValues(
+                context,
+                "CSIR-SCR-NonpersonAcct-Managed"
+            ).length > 0
         ) {
 
-            return notApplicable(
+            return fail(
                 this.id,
-                "CSIR-SvcAcct is Yes and RP1 approvals passed, but CSIR-SCR-NonpersonAcct-Managed is not answered."
+                "CSIR-SCR-NonpersonAcct-Managed has a selected value other than Yes or No."
             );
         }
 
-        return fail(
+        return notApplicable(
             this.id,
-            "CSIR-SCR-NonpersonAcct-Managed is not answered."
+            "CSIR-SCR-NonpersonAcct-Managed was not found or is not answered in the survey."
         );
     }
 };

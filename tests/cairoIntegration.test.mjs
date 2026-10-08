@@ -597,17 +597,100 @@ test("embedded validation only reads its job snapshot and exports those results"
     assert.deepEqual(h.calls.find(call => call.exported).exported, results);
 });
 
-test("email templates support Last Assessment ID independently of the current assessment ID", async () => {
+test("email templates support last assessment and last survey template IDs independently of current IDs", async () => {
     const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
-    const review = { assessmentId: 41559874, incompleteAssessmentId: 41559874, lastAssessmentId: 26750839 };
-    const template = "Last: {{LAST_ASSESSMENT_ID}}; current: {{INCOMPLETE_ASSESSMENT_ID}}; last again: {{LAST_ASSESSMENT_ID}}";
-    const expected = "Last: 26750839; current: 41559874; last again: 26750839";
+    const review = { assessmentId: 41559874, incompleteAssessmentId: 41559874, lastAssessmentId: 26750839,
+        lastSurveyTemplateId: 600001, surveyTemplateId: 616901 };
+    const template = "Last: {{LAST_ASSESSMENT_ID}}; current: {{INCOMPLETE_ASSESSMENT_ID}}; last template: {{LAST_SURVEY_TEMPLATE_ID}}; current template: {{SURVEY_TEMPLATE_ID}}";
+    const expected = "Last: 26750839; current: 41559874; last template: 600001; current template: 616901";
     assert.equal(h.context.replaceTemplatePlaceholders(template, review), expected);
     assert.equal(h.context.replaceTemplatePlaceholders(template, review, { escapeHtml: false }), expected);
     assert.equal(h.context.replaceTemplatePlaceholders("Last: {{LAST_ASSESSMENT_ID}}", {}), "Last: ");
+    assert.equal(h.context.replaceTemplatePlaceholders("Last template: {{LAST_SURVEY_TEMPLATE_ID}}", {}), "Last template: ");
+    assert.equal(h.context.replaceTemplatePlaceholders("{{LAST_SURVEY_TEMPLATE_ID}}", { oldSurveyTemplateId: 600002 }), "600002");
     assert.equal(h.context.replaceTemplatePlaceholders("{{LAST_ASSESSMENT_ID}}", { lastAssessmentId: '<>&"' }), "&lt;&gt;&amp;&quot;");
     const html = await readFile(new URL("../popup.html", import.meta.url), "utf8");
     assert.match(html, /<option value="\{\{LAST_ASSESSMENT_ID\}\}">Last Assessment ID<\/option>/);
+    assert.match(html, /<option value="\{\{LAST_SURVEY_TEMPLATE_ID\}\}">Last Survey Template ID<\/option>/);
+});
+
+test("ASA mode stays disabled by default and enabling it activates the built-in rich email template", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    assert.equal(vm.runInContext("asaSettings.enabled", h.context), false);
+    assert.equal(vm.runInContext("asaSettings.emailTemplateEnabled", h.context), false);
+
+    const defaults = vm.runInContext(`JSON.stringify(enableAsaModeDefaults({
+        enabled: false,
+        emailTemplateEnabled: false,
+        emailTemplateSubject: "",
+        emailTemplateHtml: ""
+    }))`, h.context);
+    const settings = JSON.parse(defaults);
+    assert.equal(settings.enabled, true);
+    assert.equal(settings.emailTemplateEnabled, true);
+    assert.equal(settings.emailTemplateSubject, "{{ASSET_NAME}} Risk Profiler Review");
+    assert.match(settings.emailTemplateHtml, /<strong>\{\{ASSET_NAME\}\}- Risk Profiler<\/strong>/);
+    assert.match(settings.emailTemplateHtml, /<strong>\{\{ASSET_NAME\}\} application<\/strong>/);
+    assert.match(settings.emailTemplateHtml, /href="https:\/\/cairois\.web\.boeing\.com\/Assessments\/\{\{LAST_ASSESSMENT_ID\}\}\/Survey\/\{\{LAST_SURVEY_TEMPLATE_ID\}\}\/View"/);
+
+    const custom = JSON.parse(vm.runInContext(`JSON.stringify(enableAsaModeDefaults({
+        enabled: false,
+        emailTemplateEnabled: false,
+        emailTemplateSubject: "Custom subject",
+        emailTemplateHtml: "<p>Custom body</p>"
+    }))`, h.context));
+    assert.equal(custom.emailTemplateSubject, "Custom subject");
+    assert.equal(custom.emailTemplateHtml, "<p>Custom body</p>");
+});
+
+test("built-in email body resolves bold application names and the prior-assessment Cairo link", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    const resolved = vm.runInContext(`replaceTemplatePlaceholders(DEFAULT_EMAIL_TEMPLATE_HTML, {
+        assetName: "Example Application",
+        lastAssessmentId: 26750839,
+        lastSurveyTemplateId: 600001
+    })`, h.context);
+    assert.match(resolved, /<strong>Example Application- Risk Profiler<\/strong>/);
+    assert.match(resolved, /<strong>Example Application application<\/strong>/);
+    assert.match(resolved, /href="https:\/\/cairois\.web\.boeing\.com\/Assessments\/26750839\/Survey\/600001\/View"/);
+    assert.doesNotMatch(resolved, /\{\{(?:ASSET_NAME|LAST_ASSESSMENT_ID|LAST_SURVEY_TEMPLATE_ID)\}\}/);
+});
+
+test("review retrieves the last assessment detail and stores its survey template ID", async () => {
+    const detailCalls = [];
+    const context = vm.createContext({
+        CONFIG,
+        REVIEW_MODES: { INITIAL: "initial", SELECTED_ANSWERS: "selectedAnswers" },
+        REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS: [],
+        REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD: 0.8,
+        getAssessmentDetail: async assessmentId => {
+            detailCalls.push(assessmentId);
+            return { surveyTemplateId: assessmentId === 26750839 ? 600001 : 616901 };
+        },
+        getSurveyQuestions: async () => [],
+        getAssessmentAnswers: async () => [],
+        getBusinessApplicationContactDetailsSummary: async () => [],
+        getSurveyTemplateDetails: async () => null,
+        getRiskProfilerSurveyTemplates: async () => [],
+        getAnswerTimestampMillis: () => 0,
+        loadAnswerList: data => Array.isArray(data) ? data : data?.answers || [],
+        normalizeAnswersByAlternateQuestionId: data => Array.isArray(data) ? data : [],
+        Date,
+        console
+    });
+    vm.runInContext(withoutImports(await readFile(new URL("../core/reviewEngine.js", import.meta.url), "utf8"))
+        .replace(/^export /gm, ""), context);
+    const result = await context.buildReviewResult({
+        assetId: 40326,
+        assetName: "Test application",
+        lastAssessmentId: 26750839,
+        incompleteAssessmentId: 41559874
+    }, [], { mode: "initial" });
+    assert.deepEqual(detailCalls, [26750839, 41559874]);
+    assert.equal(result.lastAssessmentId, 26750839);
+    assert.equal(result.lastSurveyTemplateId, 600001);
+    assert.equal(result.reviewBasis.lastSurveyTemplateId, 600001);
+    assert.equal(result.surveyTemplateId, 616901);
 });
 
 test("embedded review opens standard notes and wires the configured email action", async () => {

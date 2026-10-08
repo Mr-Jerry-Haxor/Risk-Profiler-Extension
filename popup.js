@@ -85,6 +85,16 @@ let selectedReviewMode = REVIEW_MODES.INITIAL;
 const DEFAULT_EMAIL_SUBJECT_TEMPLATE =
     "{{ASSET_NAME}} Risk Profiler Review";
 
+const DEFAULT_EMAIL_TEMPLATE_HTML = [
+    "<p>Hello All,</p>",
+    "<p>I am the Application Security Administrator (ASA) for <strong>{{ASSET_NAME}}- Risk Profiler</strong> You are receiving this email as you are identified in ESATS as the Application Manager, Business System Manager, for the <strong>{{ASSET_NAME}} application</strong>. If you are not the correct point of contact, please provide current AM/BSM names and have ESATS updated.</p>",
+    "<p>As part of our annual review process, I am reviewing {{ASSET_NAME}} - RISK PROFILER. My review notes have been attached, kindly answer unanswered questions appended in the attached document.</p>",
+    "<p>Please use the below URL to review the Risk Profiler of {{ASSET_NAME}} from previous assessment and let me know if you would like to make any changes or modifications this time.</p>",
+    "<p><a href=\"https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View\">https://cairois.web.boeing.com/Assessments/{{LAST_ASSESSMENT_ID}}/Survey/{{LAST_SURVEY_TEMPLATE_ID}}/View</a></p>",
+    "<p>I’d be happy to schedule a meeting to review {{ASSET_NAME}} – Risk Profiler and address any questions. Please share your availability, or let me know if you would prefer to continue the discussion by email. I’m happy to proceed in whichever format works best for you.</p>",
+    "<p>Please let me know your preference so I can proceed accordingly. If you have any questions or need clarification on any point, please feel free to reach out.</p>"
+].join("");
+
 let asaSettings = {
     enabled:
         false,
@@ -93,7 +103,7 @@ let asaSettings = {
     emailTemplateSubject:
         DEFAULT_EMAIL_SUBJECT_TEMPLATE,
     emailTemplateHtml:
-        ""
+        DEFAULT_EMAIL_TEMPLATE_HTML
 };
 
 const PLUGIN_LAYOUT_STORAGE_KEY = "pluginLayoutMode";
@@ -351,7 +361,7 @@ async function loadAsaSettings() {
                 ? sanitizeRichText(
                     value.emailTemplateHtml
                 )
-                : ""
+                : DEFAULT_EMAIL_TEMPLATE_HTML
     };
 
     renderAsaSettings();
@@ -440,6 +450,27 @@ function readAsaSettingsFromUi() {
             sanitizeRichText(
                 $("emailTemplateEditor")?.innerHTML || ""
             )
+    };
+}
+
+function enableAsaModeDefaults(settings) {
+    const current = settings || {};
+    const bodyHasText = String(current.emailTemplateHtml || "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .trim().length > 0;
+
+    return {
+        ...current,
+        enabled: true,
+        emailTemplateEnabled: true,
+        emailTemplateSubject:
+            current.emailTemplateSubject ||
+            DEFAULT_EMAIL_SUBJECT_TEMPLATE,
+        emailTemplateHtml:
+            bodyHasText
+                ? current.emailTemplateHtml
+                : DEFAULT_EMAIL_TEMPLATE_HTML
     };
 }
 
@@ -1510,8 +1541,15 @@ function attachEvents() {
             "change",
             () => {
 
-                asaSettings =
+                const settings =
                     readAsaSettingsFromUi();
+
+                asaSettings =
+                    settings.enabled
+                        ? enableAsaModeDefaults(
+                            settings
+                        )
+                        : settings;
 
                 renderAsaSettings();
             }
@@ -3238,6 +3276,13 @@ function replaceTemplatePlaceholders(
         ) ||
         "";
 
+    const lastSurveyTemplateId =
+        review.lastSurveyTemplateId ||
+        review.oldSurveyTemplateId ||
+        review.reviewBasis?.lastSurveyTemplateId ||
+        review.reviewBasis?.oldSurveyTemplateId ||
+        "";
+
     const templateValue =
         value =>
             escapeHtml
@@ -3270,6 +3315,10 @@ function replaceTemplatePlaceholders(
         "{{LAST_ASSESSMENT_ID}}":
             templateValue(
                 review.lastAssessmentId
+            ),
+        "{{LAST_SURVEY_TEMPLATE_ID}}":
+            templateValue(
+                lastSurveyTemplateId
             ),
         "{{SURVEY_TEMPLATE_ID}}":
             templateValue(
