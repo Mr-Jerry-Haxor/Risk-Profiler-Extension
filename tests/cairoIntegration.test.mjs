@@ -61,15 +61,26 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
     const listeners = {};
     const event = name => ({ addListener: callback => { listeners[name] = callback; } });
     const calls = [];
+    const clearedAlarms = [];
+    const createdAlarms = [];
     let releaseSession;
     const sessionReady = new Promise(resolve => { releaseSession = resolve; });
     const chrome = {
         storage: { local, session },
         runtime: { id: "test-extension", getURL: file => `chrome-extension://test-extension/${file}`, onMessage: event("message"), onInstalled: event("installed"), onStartup: event("startup") },
-        tabs: { get: async () => ({ id: 1, url: routeUrl }) },
+        tabs: {
+            get: async () => ({ id: 1, url: routeUrl }),
+            query: async () => []
+        },
         sidePanel: { setOptions: async () => {}, setPanelBehavior: async () => {} },
         action: { setPopup: async () => {} },
-        alarms: { onAlarm: event("alarm"), create() {} }
+        alarms: {
+            onAlarm: event("alarm"),
+            async create(name, options) {
+                createdAlarms.push({ name, options: structuredClone(options) });
+            },
+            async clear(name) { clearedAlarms.push(name); return true; }
+        }
     };
     const context = vm.createContext({
         chrome, CONFIG, PREREQUISITE_CHECKS, URL, AbortController, crypto: webcrypto, console,
@@ -102,8 +113,94 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
     const viewSender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") + "?view=cairo&job=test" };
     const send = (message, from = ["CAIRO_SURVEY_ELIGIBILITY", "START_CAIRO_JOB"].includes(message.action) ? sender : viewSender) =>
         new Promise(resolve => listeners.message(message, from, resolve));
-    return { send, sender, viewSender, local, session, chrome, context, calls, releaseSession, waitForSessions };
+    return { send, sender, viewSender, local, session, chrome, context, calls, clearedAlarms, createdAlarms, listeners, releaseSession, waitForSessions };
 }
+
+test("install, browser startup, and a missed template alarm never load website data", async () => {
+    const h = await workerHarness();
+    let assessmentRequests = 0;
+    let ensuredTabs = 0;
+    h.context.getAssessmentList = async () => { assessmentRequests++; return [row]; };
+    h.context.ensureSiteTab = async () => { ensuredTabs++; return null; };
+
+    await h.listeners.installed({ reason: "update" });
+    await h.listeners.startup();
+    await h.listeners.alarm({ name: "assessment_refresh" });
+    await h.listeners.alarm({ name: "survey_template_refresh" });
+
+    assert.equal(assessmentRequests, 0);
+    assert.equal(ensuredTabs, 0);
+    assert.deepEqual(h.clearedAlarms, [
+        "assessment_refresh",
+        "assessment_refresh",
+        "assessment_refresh"
+    ]);
+    assert.deepEqual(h.createdAlarms, [
+        {
+            name: "survey_template_refresh",
+            options: { delayInMinutes: 60, periodInMinutes: 60 }
+        },
+        {
+            name: "survey_template_refresh",
+            options: { delayInMinutes: 60, periodInMinutes: 60 }
+        }
+    ]);
+});
+
+test("hourly template refresh runs only with an open Cairo tab and stores its update time", async () => {
+    const h = await workerHarness();
+    const requestOptions = [];
+    let ensuredTabs = 0;
+    h.chrome.tabs.query = async () => [{
+        id: 7,
+        status: "complete",
+        discarded: false,
+        url: routeUrl
+    }];
+    h.context.ensureSiteTab = async () => { ensuredTabs++; return null; };
+    h.context.getRiskProfilerSurveyTemplates = async options => {
+        requestOptions.push(structuredClone(options));
+        return templates;
+    };
+
+    await h.listeners.alarm({ name: "survey_template_refresh" });
+
+    assert.deepEqual(requestOptions, [{
+        retryUntilAvailable: false,
+        retries: 1,
+        allowTabRecovery: false
+    }]);
+    assert.equal(ensuredTabs, 0);
+    assert.deepEqual(h.local.values.supportedSurveyTemplateIds, [616901]);
+    assert.ok(Number.isFinite(h.local.values.supportedSurveyTemplateIdsUpdatedAt));
+    assert.equal(
+        h.local.values.whatsNewModalState.updatedAt,
+        h.local.values.supportedSurveyTemplateIdsUpdatedAt
+    );
+});
+
+test("passive template refresh preserves the cache when the open Cairo session is unavailable", async () => {
+    const h = await workerHarness();
+    await h.local.set({
+        supportedSurveyTemplateIds: [600001],
+        supportedSurveyTemplateIdsUpdatedAt: 123
+    });
+    h.chrome.tabs.query = async () => [{ id: 7, status: "complete", discarded: false, url: routeUrl }];
+    h.context.getRiskProfilerSurveyTemplates = async () => { throw new Error("signed out"); };
+
+    await h.listeners.alarm({ name: "survey_template_refresh" });
+
+    assert.deepEqual(h.local.values.supportedSurveyTemplateIds, [600001]);
+    assert.equal(h.local.values.supportedSurveyTemplateIdsUpdatedAt, 123);
+});
+
+test("opening the popup or side panel does not automatically check website sessions", async () => {
+    const source = await readFile(new URL("../popup.js", import.meta.url), "utf8");
+    const initializeBody = source.match(/async function initialize\(\) \{([\s\S]*?)\n\}\n\nasync function initializeCairoView/);
+    assert.ok(initializeBody);
+    assert.doesNotMatch(initializeBody[1], /checkPrerequisites\s*\(/);
+    assert.match(initializeBody[1], /loadPrerequisiteStatus\s*\(/);
+});
 
 test("session waiting retries only failed sites at ten-second intervals", async () => {
     const h = await workerHarness();
@@ -245,6 +342,26 @@ test("eligibility falls back to the What's New list when the template request fa
     assert.equal((await h.send({ action: "CAIRO_SURVEY_ELIGIBILITY" })).eligible, true);
 });
 
+test("eligibility persists supported template IDs and reuses them without another request", async () => {
+    const h = await workerHarness();
+    assert.equal((await h.send({ action: "CAIRO_SURVEY_ELIGIBILITY" })).eligible, true);
+    assert.deepEqual(h.local.values.supportedSurveyTemplateIds, [616901]);
+    assert.deepEqual(h.local.values.whatsNewModalState.supportedSurveyTemplateIds, [616901]);
+    h.context.getRiskProfilerSurveyTemplates = async () => { throw new Error("should not request"); };
+    assert.equal((await h.send({ action: "CAIRO_SURVEY_ELIGIBILITY" })).eligible, true);
+});
+
+test("plugin assessment refresh also refreshes the persisted template ID cache", async () => {
+    const h = await workerHarness();
+    h.context.getRiskProfilerSurveyTemplates = async () => [
+        { surveyTemplateId: 700001, versionNumber: 313 }
+    ];
+    const response = await h.send({ action: "REFRESH_ASSESSMENTS" }, h.viewSender);
+    assert.equal(response.success, true);
+    assert.deepEqual(h.local.values.supportedSurveyTemplateIds, [700001]);
+    assert.equal(h.local.values.whatsNewModalState.templates[0].surveyTemplateId, 700001);
+});
+
 test("interrupted worker state is reported rather than leaving the modal stuck", async () => {
     const h = await workerHarness();
     const jobId = webcrypto.randomUUID();
@@ -280,7 +397,7 @@ class Element {
     close() { this.open = false; this.onclose?.(); }
 }
 
-async function contentHarness(eligible = true, headerWidths = null, startResponses = []) {
+async function contentHarness(eligible = true, headerWidths = null, startResponses = [], cachedTemplateIds = null) {
     const body = new Element("body");
     const outline = new Element("button");
     outline.textContent = "View Survey Outline";
@@ -308,16 +425,35 @@ async function contentHarness(eligible = true, headerWidths = null, startRespons
     const location = { href: routeUrl, pathname: new URL(routeUrl).pathname };
     const calls = [];
     let reconcile;
+    let storageChanged;
     const context = vm.createContext({
         document, location, setTimeout() {}, setInterval(callback) { reconcile = callback; },
         getComputedStyle: element => ({ width: element.style.width || "auto" }),
         MutationObserver: class { observe() {} },
-        chrome: { runtime: { getURL: path => `chrome-extension://test/${path}`, async sendMessage(message) { calls.push(message); return message.action === "CAIRO_SURVEY_ELIGIBILITY" ? { success: true, eligible } : startResponses.shift() || { success: true, jobId: "test-job" }; } } }
+        chrome: {
+            storage: {
+                local: {
+                    async get() {
+                        return cachedTemplateIds === null
+                            ? {}
+                            : { supportedSurveyTemplateIds: cachedTemplateIds };
+                    }
+                },
+                onChanged: { addListener(listener) { storageChanged = listener; } }
+            },
+            runtime: { getURL: path => `chrome-extension://test/${path}`, async sendMessage(message) { calls.push(message); return message.action === "CAIRO_SURVEY_ELIGIBILITY" ? { success: true, eligible } : startResponses.shift() || { success: true, jobId: "test-job" }; } }
+        }
     });
     vm.runInContext(await readFile(new URL("../content/cairoSurvey.js", import.meta.url), "utf8"), context);
     await flush();
-    return { body, outline, document, calls, location, reconcile, actionsColumn, titleColumn };
+    return { body, outline, document, calls, location, reconcile, storageChanged, actionsColumn, titleColumn };
 }
+
+test("Cairo injects buttons from the persisted template ID cache without waiting for the worker", async () => {
+    const h = await contentHarness(false, null, [], [616901]);
+    assert.ok(h.document.getElementById("risk-profiler-cairo-actions"));
+    assert.equal(h.calls.some(call => call.action === "CAIRO_SURVEY_ELIGIBILITY"), false);
+});
 
 test("survey header swaps 40/60 widths and restores them when navigating away", async () => {
     for (const original of [["40%", "60%"], ["400px", "600px"]]) {

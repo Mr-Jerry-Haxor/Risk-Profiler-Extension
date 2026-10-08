@@ -26,6 +26,10 @@ export const CONFIG = {
 
         WHATS_NEW_MODAL: "whatsNewModalState",
 
+        SUPPORTED_SURVEY_TEMPLATE_IDS: "supportedSurveyTemplateIds",
+
+        SUPPORTED_SURVEY_TEMPLATE_IDS_UPDATED_AT: "supportedSurveyTemplateIdsUpdatedAt",
+
         REVIEW_MODE: "reviewMode",
 
         ASA_SETTINGS: "asaSettings"

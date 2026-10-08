@@ -26,6 +26,20 @@ test("Cairo retries API failures in an existing survey tab without opening dupli
     assert.equal(h.creations.length, 0);
 });
 
+test("passive Cairo requests fail without opening or recovering a tab", async () => {
+    const h = await harness();
+    h.replies.set(cairoUrl, [{ error: new TypeError("offline") }]);
+    await assert.rejects(
+        h.context.fetchJson(cairoUrl, {
+            retryUntilAvailable: false,
+            retries: 1,
+            allowTabRecovery: false
+        }),
+        /not open/
+    );
+    assert.equal(h.creations.length, 0);
+});
+
 async function harness() {
     const tabs = new Map();
     const timers = [];

@@ -7,6 +7,32 @@
     let trigger = null;
     let scheduled = false;
     let headerLayout = null;
+    const TEMPLATE_IDS_KEY = "supportedSurveyTemplateIds";
+    const WHATS_NEW_STATE_KEY = "whatsNewModalState";
+
+    function currentSurveyTemplateId() {
+        const match = /^\/Assessments\/[1-9]\d*\/Survey\/([1-9]\d*)\/?$/.exec(location.pathname);
+        return match?.[1] || null;
+    }
+
+    async function getCachedEligibility() {
+        const surveyTemplateId = currentSurveyTemplateId();
+        if (!surveyTemplateId) return null;
+        const stored = await chrome.storage.local.get([
+            TEMPLATE_IDS_KEY,
+            WHATS_NEW_STATE_KEY
+        ]);
+        const state = stored[WHATS_NEW_STATE_KEY];
+        const ids = Array.isArray(stored[TEMPLATE_IDS_KEY])
+            ? stored[TEMPLATE_IDS_KEY]
+            : Array.isArray(state?.supportedSurveyTemplateIds)
+                ? state.supportedSurveyTemplateIds
+                : Array.isArray(state?.templates)
+                    ? state.templates.map(template => template?.surveyTemplateId)
+                    : null;
+        if (!Array.isArray(ids) || !ids.length) return null;
+        return ids.some(id => String(id) === surveyTemplateId);
+    }
 
     function restoreHeaderLayout() {
         if (!headerLayout) return;
@@ -176,7 +202,10 @@
         checking = true;
         const url = location.href;
         try {
-            const response = await chrome.runtime.sendMessage({ action: "CAIRO_SURVEY_ELIGIBILITY" });
+            const cachedEligibility = await getCachedEligibility();
+            const response = cachedEligibility === null
+                ? await chrome.runtime.sendMessage({ action: "CAIRO_SURVEY_ELIGIBILITY" })
+                : { success: true, eligible: cachedEligibility };
             if (url === location.href) {
                 checkedUrl = url;
                 eligible = response?.success && response.eligible;
@@ -197,5 +226,12 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
     // Also covers SPA history changes with no DOM mutations and login completion.
     setInterval(reconcile, 3000);
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== "local" ||
+            (!changes[TEMPLATE_IDS_KEY] && !changes[WHATS_NEW_STATE_KEY])) return;
+        checkedUrl = "";
+        eligible = false;
+        reconcile();
+    });
     reconcile();
 })();

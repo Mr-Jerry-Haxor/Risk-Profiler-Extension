@@ -140,23 +140,90 @@ function interruptible(promise, signal) {
     });
 }
 
-async function getCairoTemplates() {
-    if (!cairoTemplatesPromise || Date.now() - cairoTemplatesUpdatedAt > 60000) {
+function getSurveyTemplateIds(templates) {
+    return [...new Set((Array.isArray(templates) ? templates : [])
+        .map(template => Number(template?.surveyTemplateId))
+        .filter(Number.isSafeInteger))];
+}
+
+async function cacheCairoTemplates(templates) {
+    const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL) || {};
+    const supportedSurveyTemplateIds = getSurveyTemplateIds(templates);
+    const updatedAt = Date.now();
+    await chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL]: {
+            ...state,
+            templates,
+            supportedSurveyTemplateIds,
+            updatedAt
+        },
+        [CONFIG.STORAGE_KEYS.SUPPORTED_SURVEY_TEMPLATE_IDS]: supportedSurveyTemplateIds,
+        [CONFIG.STORAGE_KEYS.SUPPORTED_SURVEY_TEMPLATE_IDS_UPDATED_AT]: updatedAt
+    });
+}
+
+async function getCachedCairoTemplates() {
+    const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL);
+    if (Array.isArray(state?.templates) && state.templates.length) return state.templates;
+    const ids = await getValue(CONFIG.STORAGE_KEYS.SUPPORTED_SURVEY_TEMPLATE_IDS);
+    if (Array.isArray(ids) && ids.length) {
+        return ids.map(surveyTemplateId => ({ surveyTemplateId }));
+    }
+    return null;
+}
+
+async function getCairoTemplates(forceRefresh = false) {
+    if (!forceRefresh) {
+        const cached = await getCachedCairoTemplates();
+        if (cached) return cached;
+    }
+    if (forceRefresh || !cairoTemplatesPromise || Date.now() - cairoTemplatesUpdatedAt > 60000) {
         cairoTemplatesUpdatedAt = Date.now();
         cairoTemplatesPromise = getRiskProfilerSurveyTemplates().then(async response => {
             const templates = Array.isArray(response) ? response : response?.data;
             if (!Array.isArray(templates)) throw new Error("Unable to load supported RiskProfiler survey templates.");
-            const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL) || {};
-            await setValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL, { ...state, templates, updatedAt: Date.now() });
+            await cacheCairoTemplates(templates);
             return templates;
         }).catch(async error => {
             cairoTemplatesPromise = null;
-            const state = await getValue(CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL);
-            if (Array.isArray(state?.templates) && state.templates.length) return state.templates;
+            const cached = await getCachedCairoTemplates();
+            if (cached) return cached;
             throw error;
         });
     }
     return cairoTemplatesPromise;
+}
+
+async function refreshCairoTemplatesIfOpen() {
+    const tabs = await chrome.tabs.query({
+        url: "https://cairois.web.boeing.com/*"
+    });
+    const cairoIsOpen = tabs.some(tab =>
+        tab?.id &&
+        tab.status === "complete" &&
+        !tab.discarded &&
+        /^https:\/\/cairois\.web\.boeing\.com\//.test(tab.url || "") &&
+        !/\/(?:login|logon|signin|sign-in|wsso)(?:\/|[?#]|$)/i.test(new URL(tab.url).pathname)
+    );
+    if (!cairoIsOpen) return { updated: false, reason: "cairo-not-open" };
+
+    try {
+        const response = await getRiskProfilerSurveyTemplates({
+            retryUntilAvailable: false,
+            retries: 1,
+            allowTabRecovery: false
+        });
+        const templates = Array.isArray(response) ? response : response?.data;
+        if (!Array.isArray(templates) || !templates.length) {
+            throw new Error("Cairo returned no Risk Profiler survey templates.");
+        }
+        await cacheCairoTemplates(templates);
+        return { updated: true, count: templates.length };
+    } catch (error) {
+        // Passive maintenance must never interrupt the user or open a sign-in tab.
+        console.info("Skipped background survey-template refresh:", error.message);
+        return { updated: false, reason: "cairo-unavailable" };
+    }
 }
 
 function getCairoSenderRoute(sender) {
@@ -1376,6 +1443,14 @@ chrome.runtime.onMessage.addListener(
                             const assessments =
                                 await refreshAssessments();
 
+                            try {
+                                await getCairoTemplates(true);
+                            } catch (error) {
+                                // Keep the last supported-template cache when Cairo's
+                                // template endpoint is temporarily unavailable.
+                                console.error("Survey template refresh error:", error);
+                            }
+
                             sendResponse({
 
                                 success: true,
@@ -1541,51 +1616,41 @@ chrome.runtime.onMessage.addListener(
     }
 );
 
-/*
-====================================================
-ALARM REFRESH
-====================================================
-*/
+const LEGACY_ASSESSMENT_REFRESH_ALARM = "assessment_refresh";
+const SURVEY_TEMPLATE_REFRESH_ALARM = "survey_template_refresh";
+const SURVEY_TEMPLATE_REFRESH_MINUTES = 60;
+
+async function scheduleSurveyTemplateRefresh() {
+    await chrome.alarms.create(
+        SURVEY_TEMPLATE_REFRESH_ALARM,
+        {
+            delayInMinutes: SURVEY_TEMPLATE_REFRESH_MINUTES,
+            periodInMinutes: SURVEY_TEMPLATE_REFRESH_MINUTES
+        }
+    );
+}
 
 chrome.runtime.onInstalled.addListener(
     async () => {
 
         await restorePluginLayout();
-
-        chrome.alarms.create(
-
-            "assessment_refresh",
-
-            {
-                periodInMinutes:
-                    30
-            }
+        // Earlier releases scheduled background assessment refreshes. Remove
+        // that persisted alarm so installing/updating never opens site tabs.
+        await chrome.alarms.clear(
+            LEGACY_ASSESSMENT_REFRESH_ALARM
         );
-
-        try {
-
-            await refreshAssessments();
-
-        } catch {
-
-            // ignore
-        }
+        await scheduleSurveyTemplateRefresh();
     }
 );
 
 chrome.runtime.onStartup.addListener(
     async () => {
 
-        try {
-
-            await restorePluginLayout();
-
-            await refreshAssessments();
-
-        } catch {
-
-            // ignore
-        }
+        await restorePluginLayout();
+        await chrome.alarms.clear(
+            LEGACY_ASSESSMENT_REFRESH_ALARM
+        );
+        await scheduleSurveyTemplateRefresh();
     }
 );
 
@@ -1593,43 +1658,12 @@ chrome.alarms.onAlarm.addListener(
 
     async alarm => {
 
-        if (
-
-            alarm.name ===
-            "assessment_refresh"
-
-        ) {
-
-            try {
-
-                await refreshAssessments();
-
-            } catch (error) {
-
-                console.error(error);
-            }
+        if (alarm.name === LEGACY_ASSESSMENT_REFRESH_ALARM) {
+            await chrome.alarms.clear(
+                LEGACY_ASSESSMENT_REFRESH_ALARM
+            );
+        } else if (alarm.name === SURVEY_TEMPLATE_REFRESH_ALARM) {
+            await refreshCairoTemplatesIfOpen();
         }
     }
 );
-
-/*
-====================================================
-KEEPALIVE LOGGING
-====================================================
-*/
-
-setInterval(() => {
-
-    console.log(
-
-        "[RP] Service Worker Alive",
-
-        {
-            validationRunning,
-            reviewRunning,
-            currentValidationId,
-            currentReviewId
-        }
-    );
-
-}, 60000);

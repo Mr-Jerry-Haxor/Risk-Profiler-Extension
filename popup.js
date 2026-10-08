@@ -199,8 +199,6 @@ async function initialize() {
 
     await loadPrerequisiteStatus();
 
-    checkPrerequisites();
-
     startProgressPolling();
 
     loadExistingResults();
@@ -4560,6 +4558,10 @@ async function loadPrerequisiteStatus() {
         renderPrerequisites(
             data.prerequisiteStatus
         );
+    } else if ($("prereqSummary")) {
+
+        $("prereqSummary").textContent =
+            "Sessions are checked only when you click Check Sessions or start validation/review.";
     }
 }
 
@@ -5125,13 +5127,37 @@ async function saveSurveyDiffModalState(
     const current =
         await getStoredSurveyDiffModalState();
 
+    const templates =
+        Array.isArray(patch.templates)
+            ? patch.templates
+            : current.templates;
+
+    const supportedSurveyTemplateIds =
+        Array.isArray(templates)
+            ? [...new Set(
+                templates
+                    .map(template =>
+                        Number(template?.surveyTemplateId)
+                    )
+                    .filter(Number.isSafeInteger)
+            )]
+            : [];
+
+    const updatedAt =
+        Date.now();
+
     await chrome.storage.local.set({
         [CONFIG.STORAGE_KEYS.WHATS_NEW_MODAL]: {
             ...current,
             ...patch,
+            supportedSurveyTemplateIds,
             updatedAt:
-                Date.now()
-        }
+                updatedAt
+        },
+        [CONFIG.STORAGE_KEYS.SUPPORTED_SURVEY_TEMPLATE_IDS]:
+            supportedSurveyTemplateIds,
+        [CONFIG.STORAGE_KEYS.SUPPORTED_SURVEY_TEMPLATE_IDS_UPDATED_AT]:
+            updatedAt
     });
 }
 
@@ -5259,9 +5285,7 @@ async function refreshSurveyTemplateOptions() {
             selectedToId:
                 null,
             diff:
-                null,
-            templates:
-                []
+                null
         });
         await loadSurveyTemplateOptions(true);
     } catch (error) {

@@ -125,13 +125,16 @@ export async function getSurveyTemplateDetails(
     return fetchJson(url);
 }
 
-export async function getRiskProfilerSurveyTemplates() {
+export async function getRiskProfilerSurveyTemplates(
+    requestOptions = {}
+) {
 
     return fetchJson(
         URLS.SURVEY_TEMPLATES_RP_APP,
         {
             useCache:
-                false
+                false,
+            ...requestOptions
         }
     );
 }

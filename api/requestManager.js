@@ -198,9 +198,12 @@ async function fetchFromTab(url, site, tab, probe = false) {
     return result.data;
 }
 
-async function fetchTrustedJson(url, site, signal, probe = false) {
+async function fetchTrustedJson(url, site, signal, probe = false, allowTabRecovery = true) {
     let tabs = await siteTabs(site);
-    if (!tabs.length) tabs = [await openSiteTab(site)];
+    if (!tabs.length) {
+        if (!allowTabRecovery) throw requestError(`${site.label} is not open.`, 0, false);
+        tabs = [await openSiteTab(site)];
+    }
     let failure;
     let responsiveTab = false;
     for (const tab of tabs) {
@@ -220,7 +223,7 @@ async function fetchTrustedJson(url, site, signal, probe = false) {
             failure = error;
         }
     }
-    await recoverSite(site, responsiveTab);
+    if (allowTabRecovery) await recoverSite(site, responsiveTab);
     throw failure || requestError(`${site.label} is waiting for sign-in.`);
 }
 
@@ -254,13 +257,27 @@ async function performRequest(url, config, site, signal) {
         attempt++;
         try {
             let data;
-            if (config.sessionProbe || (site && !site.direct)) data = await fetchTrustedJson(url, site, signal, config.sessionProbe);
+            if (config.sessionProbe || (site && !site.direct)) {
+                data = await fetchTrustedJson(
+                    url,
+                    site,
+                    signal,
+                    config.sessionProbe,
+                    config.allowTabRecovery !== false
+                );
+            }
             else {
                 try { data = await fetchDirectJson(url); }
                 catch (error) {
                     if (!site || error.retryable === false || signal.aborted) throw error;
                     // Cairo cookies may only be available in the website context.
-                    data = await fetchTrustedJson(url, site, signal);
+                    data = await fetchTrustedJson(
+                        url,
+                        site,
+                        signal,
+                        false,
+                        config.allowTabRecovery !== false
+                    );
                 }
             }
             if (signal.aborted) throw requestError("Request cancelled by user", 0, false);
