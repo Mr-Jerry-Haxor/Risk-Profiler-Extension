@@ -83,9 +83,9 @@ let surveyDiffRequestId = 0;
 let selectedReviewMode = REVIEW_MODES.INITIAL;
 
 const DEFAULT_EMAIL_SUBJECT_TEMPLATE =
-    "{{ASSET_NAME}} Risk Profiler Review";
+    "Action Required : {{ASSET_NAME}} Risk Profiler Review";
 
-const DEFAULT_EMAIL_TEMPLATE_HTML = [
+const LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML = [
     "<p>Hello All,</p>",
     "<p>I am the Application Security Administrator (ASA) for <strong>{{ASSET_NAME}}- Risk Profiler</strong> You are receiving this email as you are identified in ESATS as the Application Manager, Business System Manager, for the <strong>{{ASSET_NAME}} application</strong>. If you are not the correct point of contact, please provide current AM/BSM names and have ESATS updated.</p><br><br>",
     "<p>As part of our annual review process, I am reviewing {{ASSET_NAME}} - RISK PROFILER. My review notes have been attached, kindly answer unanswered questions appended in the attached document.</p><br><br>",
@@ -94,6 +94,17 @@ const DEFAULT_EMAIL_TEMPLATE_HTML = [
     "<p>I’d be happy to schedule a meeting to review {{ASSET_NAME}} – Risk Profiler and address any questions. Please share your availability, or let me know if you would prefer to continue the discussion by email. I’m happy to proceed in whichever format works best for you.</p><br><br>",
     "<p>Please let me know your preference so I can proceed accordingly. If you have any questions or need clarification on any point, please feel free to reach out.</p>"
 ].join("");
+
+const DEFAULT_EMAIL_TEMPLATE_HTML =
+    LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML
+        .replaceAll(
+            "<p>",
+            '<p style="margin:0 0 18px 0;line-height:1.5;">'
+        )
+        .replaceAll(
+            "</p><br><br>",
+            "</p>"
+        );
 
 let asaSettings = {
     enabled:
@@ -356,7 +367,7 @@ async function loadAsaSettings() {
                 : DEFAULT_EMAIL_SUBJECT_TEMPLATE,
         emailTemplateHtml:
             typeof value.emailTemplateHtml === "string"
-                ? sanitizeRichText(
+                ? migrateBuiltInEmailTemplate(
                     value.emailTemplateHtml
                 )
                 : DEFAULT_EMAIL_TEMPLATE_HTML
@@ -482,6 +493,26 @@ function normalizeEmailSubjectTemplate(
             " "
         )
         .trim();
+}
+
+function migrateBuiltInEmailTemplate(
+    html
+) {
+
+    const sanitized =
+        sanitizeRichText(
+            html
+        );
+
+    const normalizeMarkup =
+        value => String(value || "")
+            .replace(/>\s+</g, "><")
+            .trim();
+
+    return normalizeMarkup(sanitized) ===
+        normalizeMarkup(LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML)
+        ? DEFAULT_EMAIL_TEMPLATE_HTML
+        : sanitized;
 }
 
 function sanitizeRichText(
@@ -3417,7 +3448,7 @@ function richTextToPlainText(
         )
         .forEach(element =>
             element.append(
-                "\n"
+                "\n\n"
             )
         );
 
