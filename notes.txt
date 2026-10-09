@@ -23,8 +23,18 @@ Add not applicable option for all the branch question options.
 
 issues:
 
-	RP7 : 5D002.c.1 JCD value is missing in GTC mapper , so add condition , if the exact value can't find in GTC mapper , try for other version(i mean parent version eg: a.b.c not found then check for a.b ) find or not like 	"5D002.c" for "5D002.c.1" , if you doing this way , show clearly that what you found in esats , what you refering in GTC mapper , if you cant found show error info with details.
 
-    RP7 : if app is SAAS , check esats for JCD value , if exsists then check with risk profiler answer and if matched pass, if not matched fail , if esats dont have value when app is SAAS , then make it NA.  
 
-    RP4 :  if the app is SAAS , make the checkpoint NA. 
+add last survey template ID to email variables. 
+
+CLRS :  RP12,13,14  SvcAcct yes but next 3 question not came.
+
+in export excel : all assesmnets sheet :  last column name needs to change to  "comments/Errors"
+
+fix the comments column text color in export excel.
+
+
+RP11 :  in case of RP CSIR-SvcAcct is No and ACP-NPI1 is No but app type needs SvcAcct , Add one more line in commnet i.e : check GSEP if ASA wrote any exception reson. 
+
+
+RP9 :  verify& fix : Internal and external hosting selections require CSIR-IntExtApp = Hybrid.

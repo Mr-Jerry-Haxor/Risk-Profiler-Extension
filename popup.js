@@ -95,7 +95,7 @@ const LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML = [
     "<p>Please let me know your preference so I can proceed accordingly. If you have any questions or need clarification on any point, please feel free to reach out.</p>"
 ].join("");
 
-const DEFAULT_EMAIL_TEMPLATE_HTML =
+const MARGIN_DEFAULT_EMAIL_TEMPLATE_HTML =
     LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML
         .replaceAll(
             "<p>",
@@ -104,6 +104,17 @@ const DEFAULT_EMAIL_TEMPLATE_HTML =
         .replaceAll(
             "</p><br><br>",
             "</p>"
+        );
+
+const DEFAULT_EMAIL_TEMPLATE_HTML =
+    LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML
+        .replaceAll(
+            "</p><br><br>",
+            "</p>"
+        )
+        .replaceAll(
+            "</p><p>",
+            "</p><div>&nbsp;</div><p>"
         );
 
 let asaSettings = {
@@ -509,8 +520,15 @@ function migrateBuiltInEmailTemplate(
             .replace(/>\s+</g, "><")
             .trim();
 
-    return normalizeMarkup(sanitized) ===
-        normalizeMarkup(LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML)
+    const previousBuiltInTemplates =
+        new Set([
+            normalizeMarkup(LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML),
+            normalizeMarkup(MARGIN_DEFAULT_EMAIL_TEMPLATE_HTML)
+        ]);
+
+    return previousBuiltInTemplates.has(
+        normalizeMarkup(sanitized)
+    )
         ? DEFAULT_EMAIL_TEMPLATE_HTML
         : sanitized;
 }
@@ -2315,11 +2333,20 @@ async function refreshAssessments() {
 
     try {
 
-        await chrome.runtime.sendMessage({
+        const response =
+            await chrome.runtime.sendMessage({
 
-            action:
-                "REFRESH_ASSESSMENTS"
-        });
+                action:
+                    "REFRESH_ASSESSMENTS"
+            });
+
+        if (!response?.success) {
+
+            throw new Error(
+                response?.error ||
+                "Unable to refresh assessments."
+            );
+        }
 
         await loadAssessments();
 
@@ -4617,6 +4644,27 @@ async function checkPrerequisites() {
             renderPrerequisites(
                 response.prerequisites
             );
+
+            if (
+                response.prerequisites.passed
+            ) {
+
+                $("prereqSummary").textContent =
+                    "All prerequisite sessions are active. Refreshing assessments...";
+
+                try {
+
+                    await refreshAssessments();
+
+                    $("prereqSummary").textContent =
+                        "All prerequisite sessions are active. Assessments refreshed.";
+
+                } catch (refreshError) {
+
+                    $("prereqSummary").textContent =
+                        `All prerequisite sessions are active, but assessments could not be refreshed: ${refreshError.message}`;
+                }
+            }
         }
 
     } catch (error) {

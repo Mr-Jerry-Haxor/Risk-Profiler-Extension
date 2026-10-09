@@ -32,13 +32,20 @@ export async function getAcpServiceAccountEvidence(assetName) {
         // the newest answer so casing does not preserve an obsolete answer.
         const relevant = answers.filter(answer => normalize(answer?.alternateQuestionId) === "acp-npi1")
             .map(answer => ({ ...answer, alternateQuestionId: "acp-npi1" }));
+        const evidence = { assetName, assessmentId, source };
+        if (!relevant.length) {
+            return { ...evidence, status: "question-missing" };
+        }
         const answer = normalizeAnswersByAlternateQuestionId(relevant)[0];
         const values = extractAnswerValues(answer).map(normalize);
         const selected = [...new Set(values)];
-        if (selected.length !== 1 || !["yes", "no"].includes(selected[0])) {
-            throw new Error(`ACP assessment ${assessmentId} (${source}) ACP-NPI1 is missing, unanswered, or not an unambiguous Yes/No answer.`);
+        if (selected.length === 0) {
+            return { ...evidence, status: "question-unanswered" };
         }
-        return { status: "found", assetName, assessmentId, source, serviceAccountAnswer: selected[0] };
+        if (selected.length !== 1 || !["yes", "no"].includes(selected[0])) {
+            throw new Error(`ACP assessment ${assessmentId} (${source}) ACP-NPI1 is not an unambiguous Yes/No answer.`);
+        }
+        return { ...evidence, status: "found", serviceAccountAnswer: selected[0] };
     } catch (error) {
         return { status: "error", assetName, error: error.message };
     }

@@ -71,13 +71,27 @@ test("missing ACP list entries or assessment IDs are explicit absence of ACP evi
     assert.equal(none.calls.length, 1);
 });
 
-test("ACP rejects ambiguous matches, malformed responses, missing answers, invalid IDs and HTTP failures", async () => {
+test("ACP identifies a missing or unanswered ACP-NPI1 so RP11 can use Risk Profiler evidence", async () => {
+    for (const [answers, expectedStatus, expectedText] of [
+        [{ answers: [] }, "question-missing", /ACP-NPI1 is missing.*ACP is ignored/],
+        [{ answers: [answer("ACP-NPI1", null)] }, "question-unanswered", /ACP-NPI1 is unanswered.*ACP is ignored/]
+    ]) {
+        const h = await acpHarness([row], answers);
+        const acp = await h.get(row.assetName);
+        assert.equal(acp.status, expectedStatus);
+        assert.equal(acp.assessmentId, 22);
+        assert.equal((await RP11.validate(context(acp, "Yes", "Web application"))).status, "PASS");
+        assert.equal((await RP11.validate(context(acp, "No", "Web application"))).status, "FAIL");
+        assert.equal((await RP11.validate(context(acp, "No", "Standalone desktop"))).status, "NA");
+        assert.match((await RP11.validate(context(acp, "Yes", "Web application"))).reason, expectedText);
+    }
+});
+
+test("ACP rejects ambiguous matches, malformed responses, invalid answers, invalid IDs and HTTP failures", async () => {
     for (const [rows, answers] of [
         [[row, { ...row, lastAssessmentId: 33 }], []],
         [{ unexpected: true }, []],
         [[row], {}],
-        [[row], { answers: [] }],
-        [[row], { answers: [answer("ACP-NPI1", null)] }],
         [[row], { answers: [answer("ACP-NPI1", "Maybe")] }],
         [[{ ...row, incompleteAssessmentId: "invalid" }], []],
         [new Error("HTTP 403"), []],
@@ -107,6 +121,13 @@ test("RP11 retains application-type and database rules after checking ACP No or 
         assert.equal((await RP11.validate(context(acp, "Yes", "Web application"))).status, "PASS");
         assert.equal((await RP11.validate(context(acp, "No", "Standalone desktop", "Yes"))).status, "FAIL");
         assert.equal((await RP11.validate(context(acp, "Yes", "Standalone desktop", "Yes"))).status, "PASS");
+    }
+    for (const acp of [{ status: "no-match", assetName: row.assetName },
+        { status: "no-assessment", assetName: row.assetName }]) {
+        const result = await RP11.validate(context(acp, "Yes", "Web application"));
+        assert.equal(result.status, "PASS");
+        assert.match(result.reason, /ACP is ignored/);
+        assert.match(result.reason, /Risk Profiler evidence: CSIR-AppType is Web application/);
     }
 });
 

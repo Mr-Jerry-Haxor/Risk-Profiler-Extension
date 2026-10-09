@@ -6,6 +6,8 @@ Risk Profiler Review and Validate Automation is a Microsoft Edge Manifest V3 ext
 
 The extension is designed for business users who need consistent review output and for technical teams who need traceable, repeatable, Edge-based automation across Cairo, ESATS, and GTC data sources.
 
+The side-pane layout uses a responsive 550px preferred content width. Microsoft Edge owns the draggable sidebar container, so users can continue resizing the pane and the extension adapts to the available width.
+
 ## Cairo survey-page integration
 
 Validation cards, review cards, and review notes show the saved completion date/time in the viewer's local time zone. Reopening a result does not change that time. Older results use the saved run time when available; otherwise the UI identifies the completion time as unavailable. **Send Email** uses an in-plugin confirmation in the popup, side panel, and Cairo. Confirming copies the formatted body and opens a draft for the user to paste and send; it does not send mail automatically.
@@ -26,7 +28,7 @@ If another assessment job is running, the Cairo warning includes **Cancel and st
 
 The plugin's **Cancel Validation** and **Cancel Review** buttons use the same force-stop cleanup, without automatically starting another app. Results and progress disappear immediately from the current view; starting another run is disabled until cleanup finishes. Other open plugin views clear on their next progress poll, and late polls cannot restore cancelled results.
 
-Session checks and data requests share tab recovery for Cairo, ESATS, and GTC Mapper. Failed requests try other open tabs and remember the last working session; injected browser operations time out after ten seconds instead of blocking indefinitely. Missing tabs reopen automatically. Failed sign-in tabs are preserved while retrying, with a fresh tab opened after sustained failures (at most once per minute per site). Only missing endpoints retry after a ten-second wait; successfully fetched data is retained. ESATS rereads its token on each attempt, and Cairo/GTC requests use website cookies, with cookie-free fallback for public cross-origin Termbank endpoints. Cancelling also interrupts session probes.
+Session checks and data requests share tab recovery for Cairo, ESATS, and GTC Mapper. **Check Sessions** verifies the signed-in ESATS base website at `https://esats.web.boeing.com/`; service-gateway URLs are used only for ESATS data retrieval. When all three session checks pass, the popup/side panel automatically refreshes the assessment inventory. Failed requests try other open tabs and remember the last working session; injected browser operations time out after ten seconds instead of blocking indefinitely. Missing tabs reopen automatically. Failed sign-in tabs are preserved while retrying, with a fresh tab opened after sustained failures (at most once per minute per site). Only missing endpoints retry after a ten-second wait; successfully fetched data is retained. ESATS rereads its token on each gateway data attempt, and website session probes use site cookies. Cairo/GTC requests use website cookies, with cookie-free fallback for public cross-origin Termbank endpoints. Cancelling also interrupts session probes.
 
 ## Reliability and packaging safeguards
 
@@ -36,7 +38,7 @@ Excel exports assign unique case-insensitive sheet names, including truncated na
 
 ## Business Purpose
 
-RP11 checks the live Cairo ACP assessment list (`assessment/type/48`) for an exact, case-sensitive match to the current application's asset name. It reads `ACP-NPI1` (identifier casing is ignored) from that application's incomplete ACP assessment, or its last assessment when no incomplete ACP exists. If ACP-NPI1 is Yes, CSIR-SvcAcct must be Yes; No or an unanswered/non-Yes response fails. Existing application-type and database rules remain applicable. Results include the ACP assessment ID/source and answer. Missing ACP matches or assessment IDs mean no ACP evidence; ambiguous matches, unreadable answers, or lookup errors produce a verification failure rather than silently passing or returning NA. HAR examples such as SND are reference data only, never default answers.
+RP11 checks the live Cairo ACP assessment list (`assessment/type/48`) for an exact, case-sensitive match to the current application's asset name. It reads `ACP-NPI1` (identifier casing is ignored) from that application's incomplete ACP assessment, or its last assessment when no incomplete ACP exists. If ACP-NPI1 is Yes, CSIR-SvcAcct must be Yes. When there is no exact ACP, no incomplete/last ACP assessment, or ACP-NPI1 is missing or unanswered, ACP is explicitly ignored and RP11 is evaluated from the existing Risk Profiler application-type, database, and service-account answers. Results explain the ACP state and detailed Risk Profiler basis. Ambiguous ACP matches, invalid non-Yes/No answers, malformed responses, and lookup errors remain verification failures. HAR examples such as SND are reference data only, never default answers.
 
 Risk Profiler assessment review requires users to compare completed or incomplete assessments against current survey templates, inspect unanswered reachable questions, validate required checkpoints, collect application context, and prepare notes for follow-up. This extension reduces manual work by automating the repetitive parts of that process.
 
@@ -168,7 +170,7 @@ The extension uses Edge-side concurrency:
 
 - Validation concurrency: up to 5 assessments at a time.
 - Review concurrency: up to 3 assessments at a time.
-- Session readiness is checked again after **10 seconds**, only for sites that have not yet passed. ESATS readiness uses the selected asset's actual versions endpoint, not the gateway root page; successful checks are retained for the current job.
+- Session readiness is checked again after **10 seconds**, only for sites that have not yet passed. ESATS readiness checks the signed-in base website at `https://esats.web.boeing.com/`; gateway endpoints remain dedicated to ESATS data retrieval. Successful checks are retained for the current job.
 - Cairo, ESATS, and GTC data requests retry authentication failures, sign-in HTML, timeouts, network failures, throttling, and server errors after **10 seconds**, without a ten-minute sign-in cutoff. Only the failed endpoint is retried; successful data remains cached. ESATS reads the token again on each attempt, and login redirects reuse the same tracked tab.
 - Waiting progress includes the site and attempt number. Cancellation is checked before the next attempt. Permanent missing-record/bad-request errors are reported instead of retried forever. Non-site requests retain the bounded three-attempt policy.
 - Request cache: successful responses are cached in memory by URL during the current service-worker/runtime life, unless `useCache: false` is explicitly set.
@@ -798,9 +800,9 @@ The `reason` text is important. It is shown in:
 ### RP4 and RP7 applicability and GTC fallback
 
 - **RP4:** SaaS applications are `NA` regardless of device count. Other application types keep the existing device-count checks.
-- **RP7:** SaaS applications with no ESATS JCD value are `NA`. When an ESATS JCD exists, the Risk Profiler code-classification answer must match the mapped GTC classification; matching answers pass and mismatches fail. Selecting "Not Subject" does not automatically pass a SaaS application.
+- **RP7:** SaaS applications with no ESATS JCD value are `NA`. When ESATS contains JCD values across multiple application versions, RP7 passes if at least one version/JCD maps to the selected Risk Profiler code classification. Other differing or unmapped version/JCD values do not override a valid match. If no version matches, the checkpoint fails. Selecting "Not Subject" does not automatically pass a SaaS application.
 - GTC lookup tries the exact JCD first. If it returns no terms or HTTP 404, it tries progressively shorter dotted parent codes, for example `5D002.c.1` → `5D002.c` → `5D002`. Authentication/network failures retain the existing retry workflow rather than selecting a parent based on an inaccessible endpoint.
-- RP7 result reasons show the original ESATS JCD, the GTC code used, whether parent fallback occurred, the mapped classification, and lookup attempts/errors. If a JCD exists but no usable exact/parent mapping is available, RP7 fails with details instead of silently discarding the lookup failure. These reasons also appear in the Excel export.
+- RP7 result reasons identify the ESATS application version and JCD for every matching, differing, or unmapped result; they also show the GTC code used, whether parent fallback occurred, the mapped classification, and lookup attempts/errors. If no JCD version has a usable matching exact/parent mapping, RP7 fails with details. These reasons also appear in the Excel export.
 
 ### Required Questions
 

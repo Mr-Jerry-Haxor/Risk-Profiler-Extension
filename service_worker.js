@@ -1197,8 +1197,7 @@ async function tryEnsurePrerequisiteTab(
 
 
 async function checkPrerequisite(
-    check,
-    assetId
+    check
 ) {
 
     const tabState =
@@ -1209,21 +1208,13 @@ async function checkPrerequisite(
 
     try {
 
-        if (check.id === "esats" && assetId) {
-            // Test the data path used by validation, not the gateway landing page.
-            const url = `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId=${encodeURIComponent(assetId)}`;
-            await fetchJson(url, { useCache: true, refreshCache: true, retryUntilAvailable: false, retries: 1 });
-            return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: url,
-                openedTab: tabState.opened, message: "ESATS data is accessible" };
-        }
-
         if (check.id === "cairo") {
             await fetchJson(check.url, { useCache: false, retryUntilAvailable: false, retries: 1 });
             return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: check.url,
                 openedTab: tabState.opened, message: "Cairo data is accessible" };
         }
 
-        await probeSiteSession(check.id, check.id === "esats" ? check.openUrl : check.url);
+        await probeSiteSession(check.id, check.url);
         return { id: check.id, name: check.name, passed: true, status: 200,
             finalUrl: check.url, openedTab: tabState.opened, message: `${check.name} session is active` };
 
@@ -1260,13 +1251,11 @@ async function checkPrerequisite(
 async function checkPrerequisites(previousChecks = [], assetId) {
     const generation = jobGeneration;
 
-    if (!assetId) assetId = (await getValue(CONFIG.STORAGE_KEYS.ASSESSMENTS))?.[0]?.assetId;
-
     const checks =
         await Promise.all(
             PREREQUISITE_CHECKS.map(
                 check => previousChecks.find(previous => previous.id === check.id && previous.passed) ||
-                    checkPrerequisite(check, assetId)
+                    checkPrerequisite(check)
             )
         );
 

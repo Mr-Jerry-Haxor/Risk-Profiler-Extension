@@ -396,6 +396,17 @@ test("session probes switch tabs, reject sign-in HTML and preserve reachable GTC
     assert.equal(h.creations.length, 0);
 });
 
+test("ESATS session probes check the base website with cookies instead of a gateway bearer token", async () => {
+    const h = await harness();
+    h.addTab(esatsOrigin);
+    const url = esatsOrigin + "/";
+    h.replies.set(url, [{ status: 200, html: "<html><title>ESATS</title></html>" }]);
+    assert.equal((await h.context.probeSiteSession("esats", url)).sessionActive, true);
+    assert.equal(h.requests.at(-1).url, url);
+    assert.equal(h.requests.at(-1).options.credentials, "include");
+    assert.equal(h.requests.at(-1).options.headers.Authorization, undefined);
+});
+
 test("a session probe is force-cancellable even when the injected page never responds", async () => {
     const h = await harness();
     const tab = h.addTab(gtcOrigin);

@@ -75,6 +75,14 @@ export async function getAllArtifacts(
         versions,
 
         artifacts:
-            artifactResults.flat()
+            artifactResults.flatMap(
+                (items, index) =>
+                    (Array.isArray(items) ? items : [])
+                        .map(item => ({
+                            ...item,
+                            esatsVersion:
+                                versions[index] || null
+                        }))
+            )
     };
 }

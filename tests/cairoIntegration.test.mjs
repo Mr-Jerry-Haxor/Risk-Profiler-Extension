@@ -202,6 +202,15 @@ test("opening the popup or side panel does not automatically check website sessi
     assert.match(initializeBody[1], /loadPrerequisiteStatus\s*\(/);
 });
 
+test("side-pane content defaults to 550px while remaining responsive to user resizing", async () => {
+    const css = await readFile(new URL("../popup.css", import.meta.url), "utf8");
+    const rule = css.match(/body\.side-pane \.app\s*\{([\s\S]*?)\}/);
+    assert.ok(rule);
+    assert.match(rule[1], /width:\s*100%/);
+    assert.match(rule[1], /max-width:\s*550px/);
+    assert.match(rule[1], /min-width:\s*0/);
+});
+
 test("session waiting retries only failed sites at ten-second intervals", async () => {
     const h = await workerHarness();
     const attempts = { cairo: 0, esats: 0, gtc: 0 };
@@ -222,17 +231,23 @@ test("session waiting retries only failed sites at ten-second intervals", async 
     assert.equal(messages.at(-1), "All prerequisite sessions are active");
 });
 
-test("ESATS readiness probes the asset data endpoint rather than the gateway root", async () => {
+test("ESATS readiness probes the signed-in ESATS website rather than the service gateway", async () => {
     const h = await workerHarness();
     h.chrome.tabs.query = async () => [{ id: 1, status: "complete", url: "https://esats.web.boeing.com/" }];
     const probes = [];
-    h.context.fetchJson = async (url, options) => { probes.push({ url, options }); return { businessApplicationVersions: [] }; };
+    h.context.probeSiteSession = async (id, url) => { probes.push({ id, url }); return { sessionActive: true }; };
     const result = await h.context.checkPrerequisite(PREREQUISITE_CHECKS.find(check => check.id === "esats"), "40326");
     assert.equal(result.passed, true);
-    assert.match(probes[0].url, /GetBusinessApplicationVersions\?esatsId=40326$/);
-    assert.equal(probes[0].options.retryUntilAvailable, false);
-    assert.equal(probes[0].options.refreshCache, true);
-    assert.equal(probes[0].options.retries, 1);
+    assert.deepEqual(probes, [{ id: "esats", url: "https://esats.web.boeing.com/" }]);
+    assert.equal(result.finalUrl, "https://esats.web.boeing.com/");
+});
+
+test("successful manual session checks automatically refresh assessments", async () => {
+    const source = await readFile(new URL("../popup.js", import.meta.url), "utf8");
+    const body = source.match(/async function checkPrerequisites\(\) \{([\s\S]*?)\n\}\n\nfunction setPrerequisitesChecking/);
+    assert.ok(body);
+    assert.match(body[1], /response\.prerequisites\.passed/);
+    assert.match(body[1], /await refreshAssessments\(\)/);
 });
 
 test("session checks use shared tab recovery and session probes for GTC and ESATS without an asset", async () => {
@@ -764,10 +779,16 @@ test("ASA mode stays disabled by default and enabling it activates the built-in 
     const settings = JSON.parse(defaults);
     assert.equal(settings.enabled, true);
     assert.equal(settings.emailTemplateEnabled, true);
-    assert.equal(settings.emailTemplateSubject, "{{ASSET_NAME}} Risk Profiler Review");
+    assert.equal(
+        settings.emailTemplateSubject,
+        vm.runInContext("DEFAULT_EMAIL_SUBJECT_TEMPLATE", h.context)
+    );
     assert.match(settings.emailTemplateHtml, /<strong>\{\{ASSET_NAME\}\}- Risk Profiler<\/strong>/);
     assert.match(settings.emailTemplateHtml, /<strong>\{\{ASSET_NAME\}\} application<\/strong>/);
     assert.match(settings.emailTemplateHtml, /href="https:\/\/cairois\.web\.boeing\.com\/Assessments\/\{\{LAST_ASSESSMENT_ID\}\}\/Survey\/\{\{LAST_SURVEY_TEMPLATE_ID\}\}\/View"/);
+    assert.equal((settings.emailTemplateHtml.match(/<div>&nbsp;<\/div>/g) || []).length, 6);
+    assert.doesNotMatch(settings.emailTemplateHtml, /margin:/);
+    assert.doesNotMatch(settings.emailTemplateHtml, /<br><br>/);
 
     const custom = JSON.parse(vm.runInContext(`JSON.stringify(enableAsaModeDefaults({
         enabled: false,
@@ -777,6 +798,20 @@ test("ASA mode stays disabled by default and enabling it activates the built-in 
     }))`, h.context));
     assert.equal(custom.emailTemplateSubject, "Custom subject");
     assert.equal(custom.emailTemplateHtml, "<p>Custom body</p>");
+});
+
+test("legacy built-in email variants migrate to clipboard-safe spacer blocks without replacing custom bodies", async () => {
+    const h = await popupHarness({ mode: "review", state: "complete", route, results: [] });
+    vm.runInContext("sanitizeRichText = html => String(html || '')", h.context);
+    for (const templateName of ["LEGACY_DEFAULT_EMAIL_TEMPLATE_HTML", "MARGIN_DEFAULT_EMAIL_TEMPLATE_HTML"]) {
+        const migrated = vm.runInContext(`migrateBuiltInEmailTemplate(${templateName})`, h.context);
+        assert.equal((migrated.match(/<div>&nbsp;<\/div>/g) || []).length, 6);
+        assert.equal(migrated, vm.runInContext("DEFAULT_EMAIL_TEMPLATE_HTML", h.context));
+    }
+    assert.equal(
+        vm.runInContext("migrateBuiltInEmailTemplate('<p>Custom body</p>')", h.context),
+        "<p>Custom body</p>"
+    );
 });
 
 test("built-in email body resolves bold application names and the prior-assessment Cairo link", async () => {

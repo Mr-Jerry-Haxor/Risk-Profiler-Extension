@@ -135,7 +135,9 @@ async function fetchFromTab(url, site, tab, probe = false) {
     }
     const results = await chromeCall(chrome.scripting.executeScript.bind(chrome.scripting), {
         target: { tabId: tab.id }, world: "MAIN",
-        args: [url, Boolean(site.bearer), site.origin, REQUEST_TIMEOUT_MS, probe],
+        // Session probes validate the signed-in website itself with its cookies.
+        // Bearer-token handling remains limited to ESATS service-gateway data calls.
+        args: [url, Boolean(site.bearer && !probe), site.origin, REQUEST_TIMEOUT_MS, probe],
         func: async (requestUrl, useBearerToken, pageOrigin, timeout, sessionProbe) => {
             function normalizeToken(raw) {
                 if (!raw) return null;

@@ -114,7 +114,7 @@ export const PREREQUISITE_CHECKS = [
         id: "esats",
         name: "ESATS",
         url:
-            "https://service-gateway.tas-phx.apps.boeing.com/",
+            "https://esats.web.boeing.com/",
         openUrl:
             "https://esats.web.boeing.com/",
         expectedHosts: [

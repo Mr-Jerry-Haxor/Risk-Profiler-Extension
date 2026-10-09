@@ -14,7 +14,7 @@ import { replaceTokens } from "../utils/helpers.js";
 
 const answer = (alternateQuestionId, ...values) => ({ alternateQuestionId,
     answerOptions: values.map(internalValue => ({ internalValue })) });
-const artifact = (value, policyRuleId = 2) => ({ policyRuleId, artifactName: value });
+const artifact = (value, policyRuleId = 2, esatsVersion = null) => ({ policyRuleId, artifactName: value, esatsVersion });
 const mapping = (group = "EARN") => ({ terms: [{ term: { displayName: "test",
     associated: [{ fields: [{ field: { name: group } }] }] } }] });
 const context = (type = "SaaS", classification = "EAR-NLR", values = ["5D002.c.1"], records = [mapping()]) => ({
@@ -191,6 +191,54 @@ test("RP7 shows original ESATS JCD and the parent GTC reference on pass and fail
     }
 });
 
+test("RP7 passes when any application version JCD matches and reports matching and differing versions", async () => {
+    const matching = {
+        ...mapping("EARN"),
+        lookup: { esatsValue: "5D002.c.1", gtcValue: "5D002.c", fallback: true,
+            attempts: [{ value: "5D002.c.1", status: "not-found" }, { value: "5D002.c", status: "found" }] }
+    };
+    const different = {
+        ...mapping("ITAR"),
+        lookup: { esatsValue: "9A610", gtcValue: "9A610", fallback: false,
+            attempts: [{ value: "9A610", status: "found" }] }
+    };
+    const data = context("Web application", "EAR-NLR", [], [matching, different]);
+    data.artifacts = [
+        artifact("5D002.c.1", 2, { versionName: "Production", esatsId: 101 }),
+        artifact("9A610", 2, { versionName: "Legacy", esatsId: 99 })
+    ];
+
+    const result = await RP7.validate(data);
+
+    assert.equal(result.status, "PASS");
+    assert.match(result.reason, /ESATS version Production \(ID 101\).*5D002\.c\.1.*matches.*accepted/);
+    assert.match(result.reason, /ESATS version Legacy \(ID 99\).*9A610.*ITAR.*differs/);
+});
+
+test("ESATS artifact collection retains the application version for RP7 evidence", async () => {
+    const sandbox = vm.createContext({
+        URLS,
+        replaceTokens,
+        fetchJson: async url => url.includes("GetBusinessApplicationVersions")
+            ? { businessApplicationVersions: [
+                { esatsId: 101, versionName: "Production" },
+                { esatsId: 99, versionName: "Legacy" }
+            ] }
+            : url.endsWith("=101")
+                ? [artifact("5D002.c.1")]
+                : [artifact("9A610")]
+    });
+    const source = await readFile(new URL("../api/esatsApi.js", import.meta.url), "utf8");
+    vm.runInContext(source.replace(/import\s+[\s\S]*?\sfrom\s*["'][^"']+["'];/g, "").replace(/^export /gm, ""), sandbox);
+
+    const result = await sandbox.getAllArtifacts("40326");
+
+    assert.equal(result.artifacts[0].esatsVersion.versionName, "Production");
+    assert.equal(result.artifacts[0].esatsVersion.esatsId, 101);
+    assert.equal(result.artifacts[1].esatsVersion.versionName, "Legacy");
+    assert.equal(result.artifacts[1].esatsVersion.esatsId, 99);
+});
+
 test("GTC falls back through dotted parents after empty mappings", async () => {
     const h = await lookupHarness({ "5D002.c.1": { terms: [] }, "5D002.c": { terms: [] }, "5D002": mapping("EARL") });
     const records = await h.get([artifact("5D002.c.1")]);
@@ -231,10 +279,11 @@ test("GTC deduplicates JCD values and handles string policy identifiers", async 
     assert.deepEqual(h.calls, ["5D002.c.1"]);
 });
 
-test("one mapped JCD does not hide another missing mapping", async () => {
+test("one matching JCD passes even when another version has no GTC mapping", async () => {
     const h = await lookupHarness({ "5D002.c": mapping() });
     const records = await h.get([artifact("5D002.c.1"), artifact("unmapped")]);
     const result = await RP7.validate(context("SaaS", "EAR-NLR", ["5D002.c.1", "unmapped"], records));
-    assert.equal(result.status, "FAIL");
-    assert.match(result.reason, /ESATS JCD: unmapped/);
+    assert.equal(result.status, "PASS");
+    assert.match(result.reason, /Matching version\/JCD/);
+    assert.match(result.reason, /ESATS JCD: unmapped.*could not be mapped/);
 });
