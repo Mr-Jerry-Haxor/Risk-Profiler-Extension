@@ -9,6 +9,7 @@ let cachedEsatsToken = null;
 
 export const SITE_RETRY_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 10000;
+const GTC_REQUEST_TIMEOUT_MS = 30000;
 const TAB_RECOVERY_COOLDOWN_MS = 60000;
 const ESATS_TOKEN_STORAGE_KEY = "riskProfilerEsatsBearerToken";
 const SITES = {
@@ -17,6 +18,10 @@ const SITES = {
     "termbank.web.boeing.com": { id: "gtc", label: "GTC", origin: "https://gtc-ecm.web.boeing.com", direct: true, directOnly: true }
 };
 let recoveryHandlers = {};
+
+function requestTimeoutFor(site) {
+    return site?.id === "gtc" ? GTC_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+}
 
 function logRequestMode(site, message, details = {}) {
     console.info(`[Risk Profiler][${site.label}] ${message}`, details);
@@ -343,7 +348,7 @@ export async function probeDirectEndpoint(siteId, url) {
         const response = await fetch(url, {
             credentials: site.id === "cairo" ? "include" : "omit",
             headers: { Accept: "application/json, text/plain, */*" },
-            cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+            cache: "no-store", signal: AbortSignal.timeout(requestTimeoutFor(site))
         });
         if (!response.ok && response.status !== 404) {
             throw requestError(`HTTP ${response.status}`, response.status, isRetryableStatus(response.status));
@@ -379,7 +384,7 @@ async function fetchDirectJson(url, site, bearerToken = null) {
             Accept: "application/json, text/plain, */*",
             ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
         },
-        cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        cache: "no-store", signal: AbortSignal.timeout(requestTimeoutFor(site))
     });
     if (!response.ok) throw requestError(`HTTP ${response.status}`, response.status, isRetryableStatus(response.status));
     if (new URL(response.url || url).hostname !== new URL(url).hostname) throw requestError("Redirected to sign-in", 401);

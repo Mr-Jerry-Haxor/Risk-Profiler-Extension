@@ -93,7 +93,10 @@ export const URLS = {
         "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}",
 
     GTC_LOOKUP:
-        "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/{name}.json"
+        "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/{name}.json",
+
+    GTC_PREREQUISITE:
+        "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/0A002.json"
 };
 
 export const PREREQUISITE_CHECKS = [
@@ -127,7 +130,7 @@ export const PREREQUISITE_CHECKS = [
         id: "gtc",
         name: "GTC",
         url:
-            "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/__risk_profiler_connectivity_check__.json",
+            URLS.GTC_PREREQUISITE,
         openUrl:
             "https://gtc-ecm.web.boeing.com/",
         expectedHosts: [

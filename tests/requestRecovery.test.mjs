@@ -6,6 +6,7 @@ import vm from "node:vm";
 const cairoUrl = "https://cairois.web.boeing.com/api/assessment/1/detail";
 const esatsUrl = "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/versions?id=1";
 const gtcUrl = "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/test.json";
+const gtcPrerequisiteUrl = "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/0A002.json";
 const esatsOrigin = "https://esats.web.boeing.com";
 const gtcOrigin = "https://gtc-ecm.web.boeing.com";
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -316,14 +317,20 @@ test("GTC ignores website tabs and requests its API directly without cookies", a
     assert.equal(h.creations.length, 0);
 });
 
-test("GTC prerequisite checks the real API route directly and accepts an unmapped 404", async () => {
+test("GTC prerequisite checks a real known ECCN through the same direct API route", async () => {
     const h = await harness();
-    h.replies.set(gtcUrl, [{ status: 404, data: { message: "No mapping" } }]);
-    const result = await h.context.probeDirectEndpoint("gtc", gtcUrl);
+    h.replies.set(gtcPrerequisiteUrl, [{ status: 200, data: { terms: [{ term: { name: "0A002" } }] } }]);
+    const result = await h.context.probeDirectEndpoint("gtc", gtcPrerequisiteUrl);
     assert.equal(result.reachable, true);
-    assert.equal(result.status, 404);
+    assert.equal(result.status, 200);
     assert.equal(h.requests.at(-1).options.credentials, "omit");
     assert.equal(h.creations.length, 0);
+});
+
+test("GTC direct requests use a longer timeout than Cairo and ESATS", async () => {
+    const source = await readFile(new URL("../api/requestManager.js", import.meta.url), "utf8");
+    assert.match(source, /const GTC_REQUEST_TIMEOUT_MS = 30000/);
+    assert.match(source, /site\?\.id === "gtc" \? GTC_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS/);
 });
 
 test("Cairo never falls back to website tabs when a direct request fails", async () => {
