@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { webcrypto } from "node:crypto";
-import { CONFIG, PREREQUISITE_CHECKS } from "../utils/constants.js";
+import { CONFIG, PREREQUISITE_CHECKS, URLS } from "../utils/constants.js";
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "../core/cairoIntegration.js";
 
 const routeUrl = "https://cairois.web.boeing.com/Assessments/41559874/Survey/616901";
@@ -83,13 +83,15 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         }
     };
     const context = vm.createContext({
-        chrome, CONFIG, PREREQUISITE_CHECKS, URL, AbortController, crypto: webcrypto, console,
+        chrome, CONFIG, PREREQUISITE_CHECKS, URLS, URL, AbortController, crypto: webcrypto, console,
         parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment,
         setInterval() {}, setTimeout, sessionReady,
         setRequestRecoveryHandlers() {},
         rememberSiteTab() {},
         ensureSiteTab: async () => ({ id: 1, status: "complete", url: routeUrl }),
         probeSiteSession: async () => ({ sessionActive: true }),
+        probeDirectEndpoint: async () => ({ reachable: true, status: 404 }),
+        fetchJson: async () => ({ ready: true }),
         cancelPendingRequests() {},
         clearCache() {},
         getValue: async key => local.values[key],
@@ -228,18 +230,17 @@ test("session waiting retries only failed sites at ten-second intervals", async 
     assert.deepEqual(delays, [10000, 10000]);
     assert.match(messages[0], /ESATS.*check 1.*10 seconds/);
     assert.match(messages[1], /ESATS.*check 2.*10 seconds/);
-    assert.equal(messages.at(-1), "All prerequisite sessions are active");
+    assert.equal(messages.at(-1), "All prerequisite data sources are accessible");
 });
 
-test("ESATS readiness probes the signed-in ESATS website rather than the service gateway", async () => {
+test("ESATS readiness checks a token-backed gateway endpoint when an asset is available", async () => {
     const h = await workerHarness();
-    h.chrome.tabs.query = async () => [{ id: 1, status: "complete", url: "https://esats.web.boeing.com/" }];
-    const probes = [];
-    h.context.probeSiteSession = async (id, url) => { probes.push({ id, url }); return { sessionActive: true }; };
+    const requests = [];
+    h.context.fetchJson = async (url, options) => { requests.push({ url, options }); return { ready: true }; };
     const result = await h.context.checkPrerequisite(PREREQUISITE_CHECKS.find(check => check.id === "esats"), "40326");
     assert.equal(result.passed, true);
-    assert.deepEqual(probes, [{ id: "esats", url: "https://esats.web.boeing.com/" }]);
-    assert.equal(result.finalUrl, "https://esats.web.boeing.com/");
+    assert.equal(requests[0].url, URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326"));
+    assert.equal(result.mode, "bearer-with-fallback");
 });
 
 test("successful manual session checks automatically refresh assessments", async () => {
@@ -250,19 +251,32 @@ test("successful manual session checks automatically refresh assessments", async
     assert.match(body[1], /await refreshAssessments\(\)/);
 });
 
-test("session checks use shared tab recovery and session probes for GTC and ESATS without an asset", async () => {
+test("GTC readiness is direct while ESATS without an asset retains its session fallback", async () => {
     const h = await workerHarness();
-    const ensured = [];
     const probed = [];
-    h.context.ensureSiteTab = async id => { ensured.push(id); return { id: 8, status: "complete" }; };
+    const direct = [];
+    h.context.probeDirectEndpoint = async (id, url) => { direct.push({ id, url }); return { reachable: true, status: 404 }; };
     h.context.probeSiteSession = async (id, url) => { probed.push({ id, url }); };
     for (const id of ["esats", "gtc"]) {
         const check = PREREQUISITE_CHECKS.find(item => item.id === id);
         assert.equal((await h.context.checkPrerequisite(check)).passed, true);
-        assert.equal(probed.at(-1).url, id === "esats" ? check.openUrl : check.url);
     }
-    assert.deepEqual(ensured, ["esats", "gtc"]);
-    assert.deepEqual(probed.map(item => item.id), ["esats", "gtc"]);
+    assert.deepEqual(probed, [{ id: "esats", url: "https://esats.web.boeing.com/" }]);
+    assert.deepEqual(direct, [{ id: "gtc", url: PREREQUISITE_CHECKS.find(item => item.id === "gtc").url }]);
+});
+
+test("a first manual prerequisite check uses Cairo's returned asset ID for the ESATS token test", async () => {
+    const h = await workerHarness();
+    const requests = [];
+    h.context.fetchJson = async url => {
+        requests.push(url);
+        return url === URLS.PRIMARY_ASSESSMENTS ? [{ assetId: "40326" }] : { ready: true };
+    };
+    const result = await h.context.checkPrerequisites();
+    assert.equal(result.passed, true);
+    assert.equal(requests[0], URLS.PRIMARY_ASSESSMENTS);
+    assert.equal(requests[1], URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326"));
+    assert.equal(result.checks.find(check => check.id === "esats").mode, "bearer-with-fallback");
 });
 
 test("background start succeeds without a popup and waits for sessions before validation", async () => {

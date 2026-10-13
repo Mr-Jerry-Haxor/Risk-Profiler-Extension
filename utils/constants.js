@@ -127,7 +127,7 @@ export const PREREQUISITE_CHECKS = [
         id: "gtc",
         name: "GTC",
         url:
-            "https://termbank.web.boeing.com/",
+            "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/__risk_profiler_connectivity_check__.json",
         openUrl:
             "https://gtc-ecm.web.boeing.com/",
         expectedHosts: [

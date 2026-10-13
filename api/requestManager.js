@@ -5,16 +5,66 @@ const tabCreations = new Map();
 const requestControllers = new Set();
 const recoveryState = new Map();
 let cacheGeneration = 0;
+let cachedEsatsToken = null;
 
 export const SITE_RETRY_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 10000;
 const TAB_RECOVERY_COOLDOWN_MS = 60000;
+const ESATS_TOKEN_STORAGE_KEY = "riskProfilerEsatsBearerToken";
 const SITES = {
-    "cairois.web.boeing.com": { id: "cairo", label: "Cairo", origin: "https://cairois.web.boeing.com", direct: true },
+    "cairois.web.boeing.com": { id: "cairo", label: "Cairo", origin: "https://cairois.web.boeing.com", direct: true, directOnly: true },
     "service-gateway.tas-phx.apps.boeing.com": { id: "esats", label: "ESATS", origin: "https://esats.web.boeing.com", bearer: true },
-    "termbank.web.boeing.com": { id: "gtc", label: "GTC", origin: "https://gtc-ecm.web.boeing.com" }
+    "termbank.web.boeing.com": { id: "gtc", label: "GTC", origin: "https://gtc-ecm.web.boeing.com", direct: true, directOnly: true }
 };
 let recoveryHandlers = {};
+
+function logRequestMode(site, message, details = {}) {
+    console.info(`[Risk Profiler][${site.label}] ${message}`, details);
+}
+
+function normalizeToken(raw) {
+    if (!raw) return null;
+    let value = String(raw).trim();
+    try {
+        const parsed = JSON.parse(value);
+        value = typeof parsed === "string" ? parsed :
+            parsed?.esatsToken || parsed?.access_token || parsed?.accessToken || parsed?.token || parsed?.value || value;
+    } catch { /* Plain tokens are supported too. */ }
+    return String(value).replace(/^Bearer\s+/i, "").trim() || null;
+}
+
+async function readCachedEsatsToken() {
+    if (cachedEsatsToken) return cachedEsatsToken;
+    if (!chrome.storage?.session) return null;
+    try {
+        const saved = await chrome.storage.session.get(ESATS_TOKEN_STORAGE_KEY);
+        cachedEsatsToken = normalizeToken(saved?.[ESATS_TOKEN_STORAGE_KEY]);
+    } catch (error) {
+        console.warn("[Risk Profiler][ESATS] Unable to read the cached bearer token.", error);
+    }
+    return cachedEsatsToken;
+}
+
+async function storeEsatsToken(rawToken) {
+    const token = normalizeToken(rawToken);
+    if (!token) return null;
+    cachedEsatsToken = token;
+    try {
+        await chrome.storage?.session?.set({ [ESATS_TOKEN_STORAGE_KEY]: token });
+    } catch (error) {
+        console.warn("[Risk Profiler][ESATS] Bearer token is usable for this worker but could not be cached for the browser session.", error);
+    }
+    return token;
+}
+
+async function clearEsatsToken() {
+    cachedEsatsToken = null;
+    try {
+        await chrome.storage?.session?.remove(ESATS_TOKEN_STORAGE_KEY);
+    } catch (error) {
+        console.warn("[Risk Profiler][ESATS] Unable to clear the rejected cached bearer token.", error);
+    }
+}
 
 export function setRequestRecoveryHandlers(handlers) {
     recoveryHandlers = handlers || {};
@@ -139,19 +189,19 @@ async function fetchFromTab(url, site, tab, probe = false) {
         // Bearer-token handling remains limited to ESATS service-gateway data calls.
         args: [url, Boolean(site.bearer && !probe), site.origin, REQUEST_TIMEOUT_MS, probe],
         func: async (requestUrl, useBearerToken, pageOrigin, timeout, sessionProbe) => {
-            function normalizeToken(raw) {
+            function normalizePageToken(raw) {
                 if (!raw) return null;
                 let value = String(raw).trim();
                 try {
                     const parsed = JSON.parse(value);
                     value = typeof parsed === "string" ? parsed :
-                        parsed?.esatsToken || parsed?.access_token || parsed?.token || parsed?.value || value;
+                        parsed?.esatsToken || parsed?.access_token || parsed?.accessToken || parsed?.token || parsed?.value || value;
                 } catch { /* Plain tokens are supported too. */ }
                 return String(value).replace(/^Bearer\s+/i, "").trim() || null;
             }
             try {
                 if (location.origin !== pageOrigin) return { ok: false, status: 401, message: "Waiting for sign-in" };
-                const token = useBearerToken ? normalizeToken(localStorage.getItem("esatsToken") || sessionStorage.getItem("esatsToken")) : null;
+                const token = useBearerToken ? normalizePageToken(localStorage.getItem("esatsToken") || sessionStorage.getItem("esatsToken")) : null;
                 if (useBearerToken && !token) return { ok: false, status: 401, message: "Waiting for an ESATS bearer token" };
                 const requestOptions = {
                     method: "GET",
@@ -184,7 +234,7 @@ async function fetchFromTab(url, site, tab, probe = false) {
                     return { ok: true, data: { sessionActive: true } };
                 }
                 try {
-                    return { ok: true, data: JSON.parse(text) };
+                    return { ok: true, data: JSON.parse(text), bearerToken: token || undefined };
                 } catch {
                     return { ok: false, status: 0, message: "The data endpoint did not return JSON (possibly a sign-in page)" };
                 }
@@ -197,7 +247,48 @@ async function fetchFromTab(url, site, tab, probe = false) {
     if (!result?.ok) {
         throw Object.assign(requestError(`${site.label}: ${result?.message || "No data response"}`, result?.status || 0, isRetryableStatus(result?.status)), { pageResponded: Boolean(result) });
     }
+    if (site.bearer && result.bearerToken) {
+        await storeEsatsToken(result.bearerToken);
+        logRequestMode(site, "Fallback tab request succeeded; cached its bearer token for direct requests.", {
+            url, mode: "tab-fallback", tokenPresent: true
+        });
+    }
     return result.data;
+}
+
+async function readEsatsTokenFromTab(site, tab) {
+    if (tab.status !== "complete" || !tab.url?.startsWith(site.origin + "/")) return null;
+    const results = await chromeCall(chrome.scripting.executeScript.bind(chrome.scripting), {
+        target: { tabId: tab.id }, world: "MAIN",
+        func: () => {
+            const raw = localStorage.getItem("esatsToken") || sessionStorage.getItem("esatsToken");
+            if (!raw) return null;
+            let value = String(raw).trim();
+            try {
+                const parsed = JSON.parse(value);
+                value = typeof parsed === "string" ? parsed :
+                    parsed?.esatsToken || parsed?.access_token || parsed?.accessToken || parsed?.token || parsed?.value || value;
+            } catch { /* Plain tokens are supported too. */ }
+            return String(value).replace(/^Bearer\s+/i, "").trim() || null;
+        }
+    });
+    return storeEsatsToken(results?.[0]?.result);
+}
+
+async function findEsatsToken(site, signal) {
+    const cached = await readCachedEsatsToken();
+    if (cached) return { token: cached, source: "extension-session-cache" };
+    if (typeof chrome === "undefined" || !chrome.scripting || !chrome.tabs) return { token: null, source: "unavailable" };
+    for (const tab of await siteTabs(site)) {
+        if (signal?.aborted || recoveryHandlers.shouldCancel?.()) throw requestError("Request cancelled by user", 0, false);
+        try {
+            const token = await readEsatsTokenFromTab(site, tab);
+            if (token) return { token, source: "existing-esats-tab" };
+        } catch (error) {
+            console.warn("[Risk Profiler][ESATS] Could not inspect an existing ESATS tab for a bearer token.", error);
+        }
+    }
+    return { token: null, source: "not-found" };
 }
 
 async function fetchTrustedJson(url, site, signal, probe = false, allowTabRecovery = true) {
@@ -238,9 +329,56 @@ export async function probeSiteSession(siteId, url) {
     return fetchJson(url, { sessionProbe: true, useCache: false, retries: 1, retryUntilAvailable: false });
 }
 
-async function fetchDirectJson(url) {
+export async function probeDirectEndpoint(siteId, url) {
+    const site = Object.values(SITES).find(item => item.id === siteId);
+    const requestUrl = new URL(url);
+    if (!site?.directOnly || requestUrl.protocol !== "https:" || !Object.entries(SITES)
+        .some(([host, item]) => item.id === siteId && requestUrl.hostname === host)) {
+        throw requestError("Invalid direct prerequisite probe", 0, false);
+    }
+    logRequestMode(site, "Checking direct endpoint access without a website tab.", {
+        url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite"
+    });
+    try {
+        const response = await fetch(url, {
+            credentials: site.id === "cairo" ? "include" : "omit",
+            headers: { Accept: "application/json, text/plain, */*" },
+            cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        });
+        if (!response.ok && response.status !== 404) {
+            throw requestError(`HTTP ${response.status}`, response.status, isRetryableStatus(response.status));
+        }
+        if (new URL(response.url || url).hostname !== requestUrl.hostname) {
+            throw requestError("Redirected to sign-in", 401);
+        }
+        if (response.ok) {
+            const text = await response.text();
+            if (/<title[^>]*>[^<]*(?:sign[ -]?in|log[ -]?in|sign[ -]?on)/i.test(text) ||
+                /<form[^>]*action=["'][^"']*(?:login|logon|signin|sign-in)/i.test(text)) {
+                throw requestError("Redirected to sign-in", 401);
+            }
+        }
+        logRequestMode(site, "Direct prerequisite check succeeded; no website tab was used.", {
+            url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
+            status: response.status
+        });
+        return { reachable: true, status: response.status };
+    } catch (error) {
+        logRequestMode(site, "Direct prerequisite check failed; no website tab was opened.", {
+            url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
+            status: error.status || 0, error: error.message
+        });
+        throw error;
+    }
+}
+
+async function fetchDirectJson(url, site, bearerToken = null) {
     const response = await fetch(url, {
-        credentials: "include", headers: { Accept: "application/json, text/plain, */*" },
+        credentials: site?.id === "cairo" ? "include" : "omit",
+        headers: {
+            Accept: "application/json, text/plain, */*",
+            ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
+        },
         cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
     });
     if (!response.ok) throw requestError(`HTTP ${response.status}`, response.status, isRetryableStatus(response.status));
@@ -259,7 +397,10 @@ async function performRequest(url, config, site, signal) {
         attempt++;
         try {
             let data;
-            if (config.sessionProbe || (site && !site.direct)) {
+            if (config.sessionProbe) {
+                logRequestMode(site, "Using the existing website-session probe as a fallback.", {
+                    url, mode: "tab-session-probe"
+                });
                 data = await fetchTrustedJson(
                     url,
                     site,
@@ -267,20 +408,46 @@ async function performRequest(url, config, site, signal) {
                     config.sessionProbe,
                     config.allowTabRecovery !== false
                 );
+                logRequestMode(site, "Website-session fallback probe succeeded.", {
+                    url, mode: "tab-session-probe"
+                });
+            }
+            else if (site?.bearer) {
+                const tokenState = await findEsatsToken(site, signal);
+                if (tokenState.token) {
+                    logRequestMode(site, "Trying a direct gateway request with a bearer token.", {
+                        url, mode: "direct-bearer", tokenSource: tokenState.source, tokenPresent: true
+                    });
+                    try {
+                        data = await fetchDirectJson(url, site, tokenState.token);
+                        logRequestMode(site, "Direct bearer-token request succeeded.", {
+                            url, mode: "direct-bearer", tokenSource: tokenState.source
+                        });
+                    } catch (error) {
+                        if ([401, 403].includes(error.status)) await clearEsatsToken();
+                        logRequestMode(site, "Direct bearer-token request failed; using the existing ESATS tab fallback.", {
+                            url, mode: "tab-fallback", status: error.status || 0, error: error.message
+                        });
+                        data = await fetchTrustedJson(url, site, signal, false, config.allowTabRecovery !== false);
+                    }
+                } else {
+                    logRequestMode(site, "No bearer token was available for a direct request; using the existing ESATS tab fallback.", {
+                        url, mode: "tab-fallback", tokenPresent: false
+                    });
+                    data = await fetchTrustedJson(url, site, signal, false, config.allowTabRecovery !== false);
+                }
+            }
+            else if (site?.direct) {
+                logRequestMode(site, `Trying a direct ${site.id === "cairo" ? "cookie-authenticated" : "extension"} request.`, {
+                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct"
+                });
+                data = await fetchDirectJson(url, site);
+                logRequestMode(site, "Direct request succeeded; no website tab was used.", {
+                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct"
+                });
             }
             else {
-                try { data = await fetchDirectJson(url); }
-                catch (error) {
-                    if (!site || error.retryable === false || signal.aborted) throw error;
-                    // Cairo cookies may only be available in the website context.
-                    data = await fetchTrustedJson(
-                        url,
-                        site,
-                        signal,
-                        false,
-                        config.allowTabRecovery !== false
-                    );
-                }
+                data = await fetchDirectJson(url, site);
             }
             if (signal.aborted) throw requestError("Request cancelled by user", 0, false);
             const status = Number(data?.statusCode || data?.status);
@@ -289,6 +456,12 @@ async function performRequest(url, config, site, signal) {
             if (config.useCache && config.cacheGeneration === cacheGeneration) memoryCache.set(url, normalized);
             return normalized;
         } catch (error) {
+            if (site?.directOnly) {
+                logRequestMode(site, "Direct request failed; no website tab will be opened.", {
+                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct",
+                    status: error.status || 0, error: error.message
+                });
+            }
             if (signal.aborted) throw requestError("Request cancelled by user", 0, false);
             const keepWaiting = site && config.retryUntilAvailable && error.retryable !== false;
             if (!keepWaiting && (error.retryable === false || attempt >= config.retries)) throw error;

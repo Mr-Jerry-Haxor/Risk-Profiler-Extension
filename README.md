@@ -28,7 +28,7 @@ If another assessment job is running, the Cairo warning includes **Cancel and st
 
 The plugin's **Cancel Validation** and **Cancel Review** buttons use the same force-stop cleanup, without automatically starting another app. Results and progress disappear immediately from the current view; starting another run is disabled until cleanup finishes. Other open plugin views clear on their next progress poll, and late polls cannot restore cancelled results.
 
-Session checks and data requests share tab recovery for Cairo, ESATS, and GTC Mapper. **Check Sessions** verifies the signed-in ESATS base website at `https://esats.web.boeing.com/`; service-gateway URLs are used only for ESATS data retrieval. When all three session checks pass, the popup/side panel automatically refreshes the assessment inventory. Failed requests try other open tabs and remember the last working session; injected browser operations time out after ten seconds instead of blocking indefinitely. Missing tabs reopen automatically. Failed sign-in tabs are preserved while retrying, with a fresh tab opened after sustained failures (at most once per minute per site). Only missing endpoints retry after a ten-second wait; successfully fetched data is retained. ESATS rereads its token on each gateway data attempt, and website session probes use site cookies. Cairo/GTC requests use website cookies, with cookie-free fallback for public cross-origin Termbank endpoints. Cancelling also interrupts session probes.
+Prerequisite checks and data requests now use direct extension requests for Cairo and GTC Mapper. Cairo sends its WSSO cookies with each direct request; no Cairo tab is required. GTC calls the Termbank API directly without cookies and requires neither a login nor an open GTC tab. ESATS first looks for a bearer token cached in extension session storage or available from an existing signed-in ESATS page, then calls the service gateway directly. If no token is available or a direct token request fails, the prior signed-in-tab recovery flow remains the fallback. Token values are never logged. **Check Sessions** reports failures from these data paths, and the service-worker console records the chosen mode and outcome for Cairo, ESATS, and GTC. Only failed endpoints retry after a ten-second wait; successful data is retained. Cancelling interrupts both direct and fallback requests.
 
 ## Reliability and packaging safeguards
 
@@ -64,7 +64,7 @@ The extension uses the following stack:
 | Background execution | MV3 service worker | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh. |
 | Bundling | esbuild | Bundles `popup.js` and `service_worker.js` into `dist/`. |
 | Storage | Edge extension local storage with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
-| API access | `fetch()` with Edge session cookies and trusted-tab script execution | Calls Cairo directly and calls ESATS/GTC through signed-in trusted Edge tabs where needed. |
+| API access | Direct `fetch()` with Cairo cookies, direct GTC requests, and ESATS bearer-token fallback | Cairo and GTC do not require open tabs. ESATS prefers a session-cached bearer token and retains its trusted-tab fallback. |
 | Validation engine | Local JavaScript checkpoint modules `RP1` through `RP14` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
 | Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
 | Excel export | Bundled `ExcelJS` plus encoded workbook template | Creates validation workbook with summary and assessment-level sheets. |
@@ -92,8 +92,8 @@ Manifest permissions:
 | `storage` | Stores assessment lists, validation results, review results, failed assessment retry data, contexts, progress, and UI state. |
 | `unlimitedStorage` | Prevents Edge extension storage quota pressure when many assessments, contexts, and result sets are retained locally. |
 | `alarms` | Schedules periodic assessment refresh every 30 minutes. |
-| `tabs` | Finds/open trusted Cairo, ESATS, and GTC tabs and opens prerequisite links. |
-| `scripting` | Executes fetch logic inside signed-in ESATS/GTC pages when direct extension-origin fetch is not sufficient. |
+| `tabs` | Finds/opens an ESATS tab only for bearer-token fallback and opens optional prerequisite links. |
+| `scripting` | Reads the ESATS bearer token and retains the prior ESATS page-context fetch as a fallback. |
 
 Host permissions:
 
@@ -103,11 +103,11 @@ Host permissions:
 | `https://service-gateway.tas-phx.apps.boeing.com/*` | ESATS gateway application version and artifact data. |
 | `https://termbank.web.boeing.com/*` | GTC vocabulary/API lookup for export-control artifacts. |
 | `https://esats.web.boeing.com/*` | Trusted signed-in ESATS page used for token-backed gateway calls. |
-| `https://gtc-ecm.web.boeing.com/*` | Trusted signed-in GTC page used for GTC calls. |
+| `https://gtc-ecm.web.boeing.com/*` | Optional GTC Mapper link retained for troubleshooting; GTC API calls do not depend on it. |
 
 What the extension does:
 
-1. Checks that Cairo, ESATS, and GTC sessions are active.
+1. Checks direct Cairo/GTC access and ESATS bearer-token access (with the prior ESATS tab fallback).
 2. Loads the primary Risk Profiler assessment list from Cairo.
 3. Lets the user search/filter assessments by text, regex, status, owner, due date, or survey completed date.
 4. Lets the user select assessments.
@@ -144,7 +144,7 @@ All automation calls are read-only `GET` requests. The extension does not create
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}` | `GET` | Validation mode | Loads version policy/artifact data for each ESATS version. |
 | `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}` | `GET` | Review mode | Loads ESATS contact details used in review output and Word review notes. |
 
-ESATS gateway requests are executed from a trusted signed-in ESATS tab using the Edge extension scripting API. The extension reads the ESATS token from the ESATS page context and sends it as a bearer token when available.
+ESATS gateway requests prefer a direct extension request with the bearer token cached for the browser session. The extension can obtain that token from an existing signed-in ESATS page. If the token is missing or rejected, the earlier trusted-tab request/recovery path remains available. Token values are not written to the console.
 
 #### GTC Endpoints
 
@@ -152,7 +152,7 @@ ESATS gateway requests are executed from a trusted signed-in ESATS tab using the
 |---|---:|---|---|
 | `https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/{name}.json` | `GET` | Validation mode | Looks up GTC export-control vocabulary details for artifacts with `policyRuleId === 2`. |
 
-GTC requests are also routed through a trusted signed-in GTC tab when required.
+GTC requests are sent directly from the extension without cookies; no GTC login or open GTC tab is required.
 
 #### Session/Prerequisite Checks
 
@@ -170,8 +170,8 @@ The extension uses Edge-side concurrency:
 
 - Validation concurrency: up to 5 assessments at a time.
 - Review concurrency: up to 3 assessments at a time.
-- Session readiness is checked again after **10 seconds**, only for sites that have not yet passed. ESATS readiness checks the signed-in base website at `https://esats.web.boeing.com/`; gateway endpoints remain dedicated to ESATS data retrieval. Successful checks are retained for the current job.
-- Cairo, ESATS, and GTC data requests retry authentication failures, sign-in HTML, timeouts, network failures, throttling, and server errors after **10 seconds**, without a ten-minute sign-in cutoff. Only the failed endpoint is retried; successful data remains cached. ESATS reads the token again on each attempt, and login redirects reuse the same tracked tab.
+- Data-source readiness is checked again after **10 seconds**, only for sources that have not yet passed. When Cairo supplies an asset ID, ESATS readiness calls the token-backed contact-summary gateway endpoint. If no asset ID is available, it uses the signed-in ESATS base website as the compatibility fallback. Successful checks are retained for the current job.
+- Cairo, ESATS, and GTC data requests retry authentication failures, sign-in responses, timeouts, network failures, throttling, and server errors after **10 seconds**, without a ten-minute cutoff. Cairo and GTC retry directly and do not open tabs. ESATS retries its direct cached-token mode first and can recover through the prior tab flow when needed. Only the failed endpoint is retried; successful data remains cached.
 - Waiting progress includes the site and attempt number. Cancellation is checked before the next attempt. Permanent missing-record/bad-request errors are reported instead of retried forever. Non-site requests retain the bounded three-attempt policy.
 - Request cache: successful responses are cached in memory by URL during the current service-worker/runtime life, unless `useCache: false` is explicitly set.
 
@@ -413,9 +413,9 @@ This extension consolidates those tasks into one guided workflow.
 
 #### Business Workflow
 
-1. Open Microsoft Edge and sign in to Cairo, ESATS, and GTC.
+1. Open Microsoft Edge. Complete Cairo WSSO and ESATS sign-in when required; GTC does not require sign-in. Cairo and GTC tabs do not need to remain open.
 2. Open the extension.
-3. Confirm prerequisite sessions are active.
+3. Confirm the prerequisite data-access checks pass.
 4. Search/filter the assessment list.
 5. Select one or more applications.
 6. Click `Validate Selected` to run automated quality checks.
@@ -542,7 +542,7 @@ Popup runtime state also keeps the active review-note question selections so the
 
 - The extension relies on existing authenticated Microsoft Edge sessions.
 - Cairo calls use cookies with `credentials: include`.
-- ESATS and GTC calls may run inside trusted signed-in tabs through the Edge extension scripting API.
+- ESATS prefers direct bearer-token requests and may use a trusted signed-in ESATS tab as a fallback. GTC calls are always direct.
 - The extension does not ask users for passwords.
 - The extension does not write back to Cairo, ESATS, or GTC.
 - Output artifacts are generated locally in Microsoft Edge.
@@ -666,7 +666,7 @@ Load in Microsoft Edge:
 2. Enable Developer mode.
 3. Click `Load unpacked`.
 4. Select the `dist/` folder.
-5. Open/sign in to Cairo, ESATS, and GTC before running validation or review.
+5. Confirm Cairo WSSO and ESATS authentication when required, then run **Check Sessions**. No GTC login or open Cairo/GTC tab is required.
 
 ## Current Version
 

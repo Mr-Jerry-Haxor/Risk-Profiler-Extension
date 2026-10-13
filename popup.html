@@ -74,24 +74,24 @@
                         </strong>
 
                         <p>
-                            Open and sign in to Cairo, ESATS, and GTC in separate Edge tabs first. Boeing WSSO stores the session cookies the extension needs for API requests.
+                            The extension now checks Cairo and GTC directly. ESATS prefers a cached bearer token and uses the existing tab-based sign-in flow only as a fallback.
                         </p>
 
                         <ol>
                             <li>
-                                Sign in to Cairo and confirm the Cairo page loads.
+                                Sign in to Cairo when required by WSSO. The Cairo tab does not need to remain open; API requests use Cairo cookies directly.
                             </li>
 
                             <li>
-                                Sign in to ESATS and confirm the ESATS page loads.
+                                Sign in to ESATS once so its bearer token can be observed. After the token is cached for the browser session, an ESATS tab is not required. If no usable token is cached, the existing ESATS tab flow is used.
                             </li>
 
                             <li>
-                                Sign in to GTC and confirm the GTC page loads.
+                                GTC requires no sign-in or open tab. Its API is requested directly.
                             </li>
 
                             <li>
-                                Return here and click Check Sessions. Green means the extension reached the target site; red means it likely hit WSSO/login or an auth error.
+                                Click Check Sessions. Green means the required data route is reachable; red includes the failure details in this card's tooltip and in the extension service-worker console.
                             </li>
                         </ol>
                     </div>
@@ -113,7 +113,7 @@
             id="prereqSummary"
             class="prereq-summary"
         >
-            Session checks have not run yet.
+            Data access checks have not run yet.
         </div>
 
         <div
@@ -173,8 +173,8 @@
                     class="prereq-open-link"
                     data-site="gtc"
                     href="#"
-                    title="Open GTC"
-                    aria-label="Open GTC in a new tab"
+                    title="Open GTC Mapper (optional)"
+                    aria-label="Open GTC Mapper in a new tab (optional)"
                 >
                     ↗
                 </a>

@@ -4619,7 +4619,7 @@ async function loadPrerequisiteStatus() {
     } else if ($("prereqSummary")) {
 
         $("prereqSummary").textContent =
-            "Sessions are checked only when you click Check Sessions or start validation/review.";
+            "Data access is checked only when you click Check Sessions or start validation/review.";
     }
 }
 
@@ -4650,19 +4650,19 @@ async function checkPrerequisites() {
             ) {
 
                 $("prereqSummary").textContent =
-                    "All prerequisite sessions are active. Refreshing assessments...";
+                    "All prerequisite data sources are accessible. Refreshing assessments...";
 
                 try {
 
                     await refreshAssessments();
 
                     $("prereqSummary").textContent =
-                        "All prerequisite sessions are active. Assessments refreshed.";
+                        "All prerequisite data sources are accessible. Assessments refreshed.";
 
                 } catch (refreshError) {
 
                     $("prereqSummary").textContent =
-                        `All prerequisite sessions are active, but assessments could not be refreshed: ${refreshError.message}`;
+                        `All prerequisite data sources are accessible, but assessments could not be refreshed: ${refreshError.message}`;
                 }
             }
         }
@@ -4687,7 +4687,7 @@ async function checkPrerequisites() {
 function setPrerequisitesChecking() {
 
     $("prereqSummary").textContent =
-        "Checking Cairo, ESATS, and GTC sessions...";
+        "Checking direct Cairo/GTC access and ESATS token access...";
 
     document
         .querySelectorAll(
@@ -4717,7 +4717,7 @@ function setPrerequisitesChecking() {
             }
 
             item.title =
-                "Checking session...";
+                "Checking data access...";
         });
 }
 
@@ -4762,10 +4762,16 @@ function renderPrerequisites(
 
             message.textContent =
                 check.passed
-                    ? "Active"
+                    ? check.mode === "direct-cookies" || check.mode === "direct"
+                        ? "Direct access"
+                        : check.mode === "bearer-with-fallback"
+                            ? "Token access"
+                            : "Fallback active"
                     : check.openedTab
                         ? `Needs sign-in (${check.name} tab opened)`
-                        : "Needs sign-in";
+                        : check.id === "esats"
+                            ? "Token/sign-in unavailable"
+                            : "Direct access unavailable";
         }
 
         item.title =
@@ -4784,7 +4790,7 @@ function renderPrerequisites(
     ) {
 
         $("prereqSummary").textContent =
-            "All prerequisite sessions are active.";
+            "All prerequisite data sources are accessible.";
 
         return;
     }
@@ -4794,13 +4800,13 @@ function renderPrerequisites(
     ) {
 
         $("prereqSummary").textContent =
-            "Session checks have not run yet.";
+            "Data access checks have not run yet.";
 
         return;
     }
 
     $("prereqSummary").textContent =
-        `${failed.length} session check${failed.length === 1 ? "" : "s"} need attention. Open the help tooltip for sign-in steps.`;
+        `${failed.length} data access check${failed.length === 1 ? "" : "s"} need attention. Hover a failed item for details and review the extension console log.`;
 }
 
 async function loadExistingResults() {

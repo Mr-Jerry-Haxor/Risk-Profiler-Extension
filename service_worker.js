@@ -26,11 +26,12 @@ from "./core/reviewEngine.js";
 
 import {
     CONFIG,
-    PREREQUISITE_CHECKS
+    PREREQUISITE_CHECKS,
+    URLS
 }
 from "./utils/constants.js";
 
-import { fetchJson, setRequestRecoveryHandlers, rememberSiteTab, cancelPendingRequests, ensureSiteTab, probeSiteSession, clearCache } from "./api/requestManager.js";
+import { fetchJson, setRequestRecoveryHandlers, cancelPendingRequests, probeDirectEndpoint, probeSiteSession, clearCache } from "./api/requestManager.js";
 
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
@@ -1170,59 +1171,46 @@ async function clearReviewData() {
 }
 
 
-async function tryEnsurePrerequisiteTab(
-    check
-) {
-
-    try {
-
-        const tab = await ensureSiteTab(check.id);
-        return { tab, opened: tab?.status !== "complete" };
-
-    } catch (error) {
-
-        console.warn(
-            `Unable to open ${check.name} prerequisite tab:`,
-            error
-        );
-
-        return {
-            tab:
-                null,
-            opened:
-                false
-        };
-    }
-}
-
-
 async function checkPrerequisite(
-    check
+    check,
+    assetId
 ) {
-
-    const tabState =
-        await tryEnsurePrerequisiteTab(
-            check
-        );
-    rememberSiteTab(check.id, tabState.tab?.id);
-
+    let finalUrl = check.url;
     try {
 
         if (check.id === "cairo") {
-            await fetchJson(check.url, { useCache: false, retryUntilAvailable: false, retries: 1 });
+            const assessments = await fetchJson(check.url, { useCache: false, retryUntilAvailable: false, retries: 1 });
+            const probeAssetId = (Array.isArray(assessments) ? assessments : [])
+                .find(item => /^[1-9]\d*$/.test(String(item?.assetId ?? "")))?.assetId;
             return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: check.url,
-                openedTab: tabState.opened, message: "Cairo data is accessible" };
+                openedTab: false, mode: "direct-cookies", probeAssetId,
+                message: "Cairo data is accessible directly with cookies; no Cairo tab was used" };
+        }
+
+        if (check.id === "gtc") {
+            const probe = await probeDirectEndpoint(check.id, check.url);
+            return { id: check.id, name: check.name, passed: true, status: probe.status, finalUrl: check.url,
+                openedTab: false, mode: "direct", message: "GTC is accessible directly; no GTC tab or sign-in was used" };
+        }
+
+        if (check.id === "esats" && assetId) {
+            const url = URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", encodeURIComponent(assetId));
+            finalUrl = url;
+            await fetchJson(url, { useCache: false, retryUntilAvailable: false, retries: 1 });
+            return { id: check.id, name: check.name, passed: true, status: 200,
+                finalUrl: url, openedTab: false, mode: "bearer-with-fallback",
+                message: "ESATS token-backed data is accessible (direct bearer token is preferred; existing tab flow remains the fallback)" };
         }
 
         await probeSiteSession(check.id, check.url);
         return { id: check.id, name: check.name, passed: true, status: 200,
-            finalUrl: check.url, openedTab: tabState.opened, message: `${check.name} session is active` };
+            finalUrl: check.url, openedTab: false, mode: "tab-fallback",
+            message: "ESATS fallback session is active; a data endpoint will test the bearer token when an asset is available" };
 
     } catch (error) {
-
-        const openedTab =
-            tabState.opened;
-
+        console.error(`[Risk Profiler][Prerequisite][${check.name}] Check failed.`, {
+            url: check.url, assetId: assetId || null, error: error.message
+        });
         return {
 
             id:
@@ -1238,26 +1226,28 @@ async function checkPrerequisite(
                 null,
 
             finalUrl:
-                check.url,
+                finalUrl,
 
-            openedTab,
+            openedTab:
+                false,
 
             message:
-                `${error.message}${openedTab ? `; opened ${check.name} in a new tab` : ""}`
+                error.message
         };
     }
 }
 
 async function checkPrerequisites(previousChecks = [], assetId) {
     const generation = jobGeneration;
-
-    const checks =
-        await Promise.all(
-            PREREQUISITE_CHECKS.map(
-                check => previousChecks.find(previous => previous.id === check.id && previous.passed) ||
-                    checkPrerequisite(check)
-            )
-        );
+    const checkById = new Map(PREREQUISITE_CHECKS.map(check => [check.id, check]));
+    const previousCairo = previousChecks.find(previous => previous.id === "cairo" && previous.passed);
+    const cairo = previousCairo || await checkPrerequisite(checkById.get("cairo"), assetId);
+    const probeAssetId = assetId || cairo.probeAssetId;
+    const remaining = await Promise.all(["esats", "gtc"].map(id =>
+        previousChecks.find(previous => previous.id === id && previous.passed) ||
+        checkPrerequisite(checkById.get(id), probeAssetId)
+    ));
+    const checks = [cairo, ...remaining];
 
     const result = {
 
@@ -1329,7 +1319,7 @@ async function waitForPrerequisiteSessions({
         ) {
 
             await updateJobStatus(
-                "All prerequisite sessions are active"
+                "All prerequisite data sources are accessible"
             );
 
             return;

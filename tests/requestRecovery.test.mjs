@@ -35,7 +35,7 @@ test("passive Cairo requests fail without opening or recovering a tab", async ()
             retries: 1,
             allowTabRecovery: false
         }),
-        /not open/
+        /offline/
     );
     assert.equal(h.creations.length, 0);
 });
@@ -49,6 +49,12 @@ async function harness() {
     const tabTokens = new Map();
     const sessionTokens = new Map();
     const brokenTabs = new Set();
+    const sessionStorageArea = {
+        values: {},
+        async get(key) { return { [key]: this.values[key] }; },
+        async set(values) { Object.assign(this.values, values); },
+        async remove(key) { delete this.values[key]; }
+    };
     const clock = { now: Date.now() };
     let nextId = 1;
     const replies = new Map();
@@ -65,6 +71,7 @@ async function harness() {
     };
     const chrome = {
         runtime: {},
+        storage: { session: sessionStorageArea },
         tabs: {
             query(query, callback) { callback([...tabs.values()].filter(tab => tab.url.startsWith(query.url.slice(0, -1)))); },
             get(id, callback) {
@@ -84,7 +91,7 @@ async function harness() {
                     localStorage: { getItem: () => tabTokens.get(tab.id) ?? tokens.get(new URL(tab.url).origin) ?? null },
                     sessionStorage: { getItem: () => sessionTokens.get(tab.id) || null }
                 });
-                fn(...details.args).then(result => callback([{ result }]));
+                Promise.resolve(fn(...(details.args || []))).then(result => callback([{ result }]));
             }
         }
     };
@@ -108,7 +115,7 @@ async function harness() {
         timer.callback();
         await flush();
     };
-    return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick };
+    return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick, sessionStorageArea };
 }
 
 test("missing ESATS retries only ESATS while Cairo and GTC results are retained", async () => {
@@ -136,20 +143,19 @@ test("missing ESATS retries only ESATS while Cairo and GTC results are retained"
     assert.equal(h.requests.find(request => request.url === esatsUrl).options.headers.Authorization, "Bearer test-token");
 });
 
-test("recovery keeps retrying past the old ten-minute limit and refreshes the token", async () => {
+test("ESATS retries with a refreshed token after direct bearer and tab fallback failures", async () => {
     const h = await harness();
     h.addTab(esatsOrigin);
     h.tokens.set(esatsOrigin, "expired-token");
-    h.replies.set(esatsUrl, [...Array.from({ length: 65 }, () => ({ status: 401 })), { status: 200, data: { statusCode: 200, data: ["ready"] } }]);
+    h.replies.set(esatsUrl, [{ status: 401 }, { status: 401 }, { status: 200, data: { statusCode: 200, data: ["ready"] } }]);
     const pending = h.context.fetchJson(esatsUrl);
     await flush();
-    for (let attempt = 0; attempt < 64; attempt++) await h.tick();
     h.tokens.set(esatsOrigin, "Bearer refreshed-token");
     await h.tick();
     assert.deepEqual(Array.from(await pending), ["ready"]);
-    assert.equal(h.requests.length, 66);
+    assert.equal(h.requests.length, 3);
     assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer refreshed-token");
-    assert.ok(h.creations.length > 0, "long-lived authentication failures open a fresh login tab with a cooldown");
+    assert.equal(h.creations.length, 0);
 });
 
 test("a failing GTC endpoint retries without refetching a successful GTC endpoint", async () => {
@@ -165,15 +171,16 @@ test("a failing GTC endpoint retries without refetching a successful GTC endpoin
     assert.equal(h.requests.filter(request => request.url === missingUrl).length, 2);
 });
 
-test("Cairo login HTML is retried after opening Cairo rather than accepted as data", async () => {
+test("Cairo login HTML is retried directly without opening Cairo", async () => {
     const h = await harness();
     h.replies.set(cairoUrl, [{ status: 200, html: true }, { status: 200, data: { surveyTemplateId: 123 } }]);
     const pending = h.context.fetchJson(cairoUrl);
     await flush();
-    assert.equal(h.creations[0].url, "https://cairois.web.boeing.com/");
+    assert.equal(h.creations.length, 0);
     await h.tick();
     assert.equal((await pending).surveyTemplateId, 123);
     assert.equal(h.requests.length, 2);
+    assert.equal(h.requests.every(request => request.options.credentials === "include"), true);
 });
 
 test("a one-shot readiness probe does not enter the indefinite retry loop", async () => {
@@ -274,7 +281,7 @@ test("late cancelled responses cannot repopulate cache or overwrite a new reques
     assert.equal((await h.context.fetchJson(cairoUrl)).version, "new");
 });
 
-test("ESATS switches from an expired-token tab to another working session and remembers it", async () => {
+test("ESATS switches from an expired-token tab, caches the working token, then goes direct", async () => {
     const h = await harness();
     const expired = h.addTab(esatsOrigin);
     const working = h.addTab(esatsOrigin);
@@ -283,57 +290,71 @@ test("ESATS switches from an expired-token tab to another working session and re
     h.replies.set(esatsUrl, [options => options.headers.Authorization === "Bearer valid"
         ? { status: 200, data: { ready: true } } : { status: 401 }]);
     assert.equal((await h.context.fetchJson(esatsUrl)).ready, true);
-    assert.deepEqual(h.requests.map(request => request.options.tabId), [expired.id, working.id]);
+    assert.deepEqual(h.requests.map(request => request.options.tabId), [undefined, expired.id, working.id]);
     await h.context.fetchJson(esatsUrl, { refreshCache: true });
-    assert.equal(h.requests.at(-1).options.tabId, working.id);
+    assert.equal(h.requests.at(-1).options.tabId, undefined);
+    assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer valid");
     assert.equal(h.timers.length, 0);
 });
 
-test("GTC switches sessions and sends website cookies from the working tab", async () => {
+test("ESATS uses a browser-session cached token directly when no ESATS tab is open", async () => {
     const h = await harness();
-    const bad = h.addTab(gtcOrigin);
-    const good = h.addTab(gtcOrigin);
-    h.replies.set(gtcUrl, [options => options.tabId === bad.id
-        ? { status: 401 } : { status: 200, data: { ready: true } }]);
+    h.sessionStorageArea.values.riskProfilerEsatsBearerToken = "cached-token";
+    h.replies.set(esatsUrl, [{ status: 200, data: { ready: true } }]);
+    assert.equal((await h.context.fetchJson(esatsUrl)).ready, true);
+    assert.equal(h.creations.length, 0);
+    assert.equal(h.requests.at(-1).options.tabId, undefined);
+    assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer cached-token");
+});
+
+test("GTC ignores website tabs and requests its API directly without cookies", async () => {
+    const h = await harness();
+    h.replies.set(gtcUrl, [{ status: 200, data: { ready: true } }]);
     assert.equal((await h.context.fetchJson(gtcUrl)).ready, true);
-    assert.equal(h.requests.at(-1).options.tabId, good.id);
-    assert.equal(h.requests.at(-1).options.credentials, "include");
+    assert.equal(h.requests.at(-1).options.tabId, undefined);
+    assert.equal(h.requests.at(-1).options.credentials, "omit");
     assert.equal(h.creations.length, 0);
 });
 
-test("Cairo falls back to its working website session when the worker receives login HTML", async () => {
+test("GTC prerequisite checks the real API route directly and accepts an unmapped 404", async () => {
+    const h = await harness();
+    h.replies.set(gtcUrl, [{ status: 404, data: { message: "No mapping" } }]);
+    const result = await h.context.probeDirectEndpoint("gtc", gtcUrl);
+    assert.equal(result.reachable, true);
+    assert.equal(result.status, 404);
+    assert.equal(h.requests.at(-1).options.credentials, "omit");
+    assert.equal(h.creations.length, 0);
+});
+
+test("Cairo never falls back to website tabs when a direct request fails", async () => {
     const h = await harness();
     const bad = h.addTab("https://cairois.web.boeing.com");
     const good = h.addTab("https://cairois.web.boeing.com");
-    h.replies.set(cairoUrl, [options => options.tabId === good.id
-        ? { status: 200, data: { ready: true } } : { status: 200, html: true }]);
-    assert.equal((await h.context.fetchJson(cairoUrl)).ready, true);
-    assert.deepEqual(h.requests.map(request => request.options.tabId), [undefined, bad.id, good.id]);
+    h.replies.set(cairoUrl, [{ status: 200, html: true }]);
+    await assert.rejects(h.context.fetchJson(cairoUrl, { retryUntilAvailable: false, retries: 1 }), /did not return JSON/);
+    assert.deepEqual(h.requests.map(request => request.options.tabId), [undefined]);
+    assert.equal(h.creations.length, 0);
     assert.equal(h.timers.length, 0);
 });
 
-for (const [siteId, origin, url] of [["esats", esatsOrigin, esatsUrl], ["gtc", gtcOrigin, gtcUrl],
-    ["cairo", "https://cairois.web.boeing.com", cairoUrl]]) {
+for (const [siteId, origin, url] of [["esats", esatsOrigin, esatsUrl]]) {
     test(`${siteId}: an unresponsive injection times out, then a working alternative supplies the data`, async () => {
         const h = await harness();
         const broken = h.addTab(origin);
         const good = h.addTab(origin);
         h.brokenTabs.add(broken.id);
         h.tokens.set(esatsOrigin, "valid");
-        if (siteId === "cairo") h.replies.set(url, [options => options.tabId
-            ? { status: 200, data: { ready: true } } : { status: 401 }]);
         const pending = h.context.fetchJson(url);
         await flush();
         await h.tick();
         assert.equal((await pending).ready ?? true, true);
-        assert.equal(h.requests.at(-1).options.tabId, good.id);
+        assert.equal(h.requests.at(-1).options.tabId, undefined);
+        assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer valid");
         assert.equal(h.creations.length, 0);
     });
 
     test(`${siteId}: closed tabs are reopened and retries resume after sign-in`, async () => {
         const h = await harness();
-        if (siteId === "cairo") h.replies.set(url, [options => options.tabId
-            ? { status: 200, data: { ready: true } } : { status: 401 }]);
         const pending = h.context.fetchJson(url);
         await flush();
         assert.equal(h.creations.length, 1);
@@ -344,7 +365,8 @@ for (const [siteId, origin, url] of [["esats", esatsOrigin, esatsUrl], ["gtc", g
         h.tokens.set(esatsOrigin, "valid");
         await h.tick();
         await pending;
-        assert.equal(h.requests.at(-1).options.tabId, h.creations[1].id);
+        assert.equal(h.requests.at(-1).options.tabId, undefined);
+        assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer valid");
     });
 }
 
@@ -373,14 +395,13 @@ test("ESATS also reads a token from the tab's session storage", async () => {
     assert.equal(h.requests.at(-1).options.headers.Authorization, "Bearer session-token");
 });
 
-test("Termbank CORS fallback retries without cookies only after a cross-origin network failure", async () => {
+test("Termbank direct requests fail visibly without opening a GTC tab", async () => {
     const h = await harness();
     h.addTab(gtcOrigin);
-    h.replies.set(gtcUrl, [options => options.credentials === "include"
-        ? { error: new TypeError("CORS") } : { status: 200, data: { terms: ["ready"] } }]);
-    const result = await h.context.fetchJson(gtcUrl);
-    assert.equal(result.terms[0], "ready");
-    assert.deepEqual(h.requests.map(request => request.options.credentials), ["include", "omit"]);
+    h.replies.set(gtcUrl, [{ error: new TypeError("CORS") }]);
+    await assert.rejects(h.context.fetchJson(gtcUrl, { retryUntilAvailable: false, retries: 1 }), /CORS/);
+    assert.deepEqual(h.requests.map(request => request.options.credentials), ["omit"]);
+    assert.equal(h.creations.length, 0);
     assert.equal(h.timers.length, 0);
 });
 
