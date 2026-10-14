@@ -105,7 +105,7 @@
         const status = document.createElement("p");
         status.style.cssText = "padding:16px;font:14px Segoe UI,sans-serif;";
         status.setAttribute("role", "status");
-        status.textContent = "Preparing assessment… You may need to sign in to Cairo, ESATS, or GTC in the tabs opened by the plugin.";
+        status.textContent = "Preparing assessment… You may need to complete Cairo or ESATS sign-in if requested by the plugin.";
         modal.append(toolbar, status);
         document.body.append(modal);
         modal.addEventListener("cancel", event => { event.preventDefault(); closeModal(); });
@@ -123,7 +123,13 @@
             if (replaceButton) replaceButton.disabled = true;
             if (replaceExisting) status.textContent = "Cancelling the previous job and clearing its generated data… Starting the current app next.";
             try {
-                const response = await chrome.runtime.sendMessage({ action: "START_CAIRO_JOB", mode, replaceExisting, forceNew });
+                const response = await chrome.runtime.sendMessage({
+                    action: "START_CAIRO_JOB",
+                    mode,
+                    replaceExisting,
+                    forceNew,
+                    pageUrl: location.href
+                });
                 if (modal !== currentModal || location.href !== pageUrl) return;
                 if (!response?.success) {
                     status.textContent = response?.error || "Unable to start the assessment.";
@@ -204,7 +210,7 @@
         try {
             const cachedEligibility = await getCachedEligibility();
             const response = cachedEligibility === null
-                ? await chrome.runtime.sendMessage({ action: "CAIRO_SURVEY_ELIGIBILITY" })
+                ? await chrome.runtime.sendMessage({ action: "CAIRO_SURVEY_ELIGIBILITY", pageUrl: location.href })
                 : { success: true, eligible: cachedEligibility };
             if (url === location.href) {
                 checkedUrl = url;

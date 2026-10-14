@@ -50,6 +50,7 @@ async function harness() {
     const tabTokens = new Map();
     const sessionTokens = new Map();
     const brokenTabs = new Set();
+    const logs = { info: [], warn: [], error: [] };
     const sessionStorageArea = {
         values: {},
         async get(key) { return { [key]: this.values[key] }; },
@@ -96,7 +97,15 @@ async function harness() {
             }
         }
     };
+    const deterministicMath = Object.create(Math);
+    deterministicMath.random = () => 0.5;
     const context = vm.createContext({ URL, AbortSignal, AbortController, chrome, fetch,
+        Math: deterministicMath,
+        console: {
+            info: (...args) => logs.info.push(args),
+            warn: (...args) => logs.warn.push(args),
+            error: (...args) => logs.error.push(args)
+        },
         Date: class extends Date { static now() { return clock.now; } },
         setTimeout: (callback, ms) => { const timer = { callback, ms }; timers.push(timer); return timer; },
         clearTimeout: timer => { const index = timers.indexOf(timer); if (index !== -1) timers.splice(index, 1); } });
@@ -111,13 +120,58 @@ async function harness() {
         await flush();
         assert.ok(timers.length, "a retry should be scheduled");
         const timer = timers.shift();
-        assert.equal(timer.ms, 10000, "all site retries wait exactly ten seconds");
         clock.now += timer.ms;
         timer.callback();
         await flush();
+        return timer.ms;
     };
-    return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick, sessionStorageArea };
+    return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick, sessionStorageArea, logs };
 }
+
+test("Cairo retries progress through 2, 5 and 10 seconds while other sites retain ten seconds", async () => {
+    const h = await harness();
+    h.replies.set(cairoUrl, [{ status: 503 }, { status: 503 }, { status: 503 }, { status: 200, data: { ready: true } }]);
+    const cairo = h.context.fetchJson(cairoUrl);
+    await flush();
+    assert.equal(await h.tick(), 2000);
+    assert.equal(await h.tick(), 5000);
+    assert.equal(await h.tick(), 10000);
+    assert.equal((await cairo).ready, true);
+
+    h.replies.set(gtcUrl, [{ status: 503 }, { status: 200, data: { ready: true } }]);
+    const gtc = h.context.fetchJson(gtcUrl, { refreshCache: true });
+    await flush();
+    assert.equal(await h.tick(), 10000);
+    assert.equal((await gtc).ready, true);
+});
+
+test("default request logs are concise and diagnostic while debug logs include each request", async () => {
+    const h = await harness();
+    h.replies.set(cairoUrl, [{ status: 503 }, { status: 200, data: { ready: true } }]);
+    const pending = h.context.fetchJson(cairoUrl);
+    await flush();
+    await h.tick();
+    await pending;
+
+    assert.equal(h.logs.info.some(([message]) => /Trying a direct/.test(message)), false);
+    const retry = h.logs.warn.find(([message]) => /retry scheduled/.test(message));
+    const recovered = h.logs.info.find(([message]) => /recovered successfully/.test(message));
+    for (const entry of [retry, recovered]) {
+        assert.ok(entry);
+        assert.match(entry[1].requestId, /^request-/);
+        assert.equal(Number.isFinite(entry[1].attempt), true);
+        assert.equal(Number.isFinite(entry[1].durationMs), true);
+        assert.equal(entry[1].url, undefined);
+        assert.match(entry[1].endpoint, /assessment\/\{id\}\/detail$/);
+    }
+
+    h.context.setRequestRecoveryHandlers({ isDebug: () => true });
+    await h.context.fetchJson(gtcUrl, { refreshCache: true });
+    const debugStart = h.logs.info.find(([message]) => /Trying a direct extension request/.test(message));
+    assert.ok(debugStart);
+    assert.equal(debugStart[1].url, gtcUrl);
+    assert.match(debugStart[1].requestId, /^request-/);
+});
 
 test("missing ESATS retries only ESATS while Cairo and GTC results are retained", async () => {
     const h = await harness();

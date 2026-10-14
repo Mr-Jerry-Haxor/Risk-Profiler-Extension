@@ -31,7 +31,7 @@ import {
 }
 from "./utils/constants.js";
 
-import { fetchJson, setRequestRecoveryHandlers, cancelPendingRequests, probeDirectEndpoint, probeSiteSession, clearCache } from "./api/requestManager.js";
+import { fetchJson, setRequestRecoveryHandlers, cancelPendingRequests, endpointTemplate, probeDirectEndpoint, probeSiteSession, clearCache } from "./api/requestManager.js";
 
 import { parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment } from "./core/cairoIntegration.js";
 
@@ -46,6 +46,9 @@ let jobGeneration = 0;
 let jobStopController = new AbortController();
 let forceStopPromise = null;
 const activeJobPromises = new Set();
+let prerequisiteCheckInFlight = null;
+let requestDebugLogging = false;
+const PREREQUISITE_FRESHNESS_MS = 30000;
 
 function trackJob(promise) {
     activeJobPromises.add(promise);
@@ -227,10 +230,42 @@ async function refreshCairoTemplatesIfOpen() {
     }
 }
 
-function getCairoSenderRoute(sender) {
-    if (sender.id !== chrome.runtime.id || !sender.tab || sender.frameId !== 0) return null;
-    // Content scripts may outlive SPA navigation; require both sender and current tab routes.
-    return parseCairoSurveyUrl(sender.url);
+function isTrustedCairoSender(sender) {
+    if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0) return false;
+    try {
+        return new URL(sender.url).origin === "https://cairois.web.boeing.com";
+    } catch {
+        return false;
+    }
+}
+
+async function resolveCairoMessageRoute(message, sender) {
+    if (!isTrustedCairoSender(sender)) return null;
+    const tab = await chrome.tabs.get(sender.tab.id);
+    let tabOrigin;
+    try {
+        tabOrigin = new URL(tab.url).origin;
+    } catch {
+        return null;
+    }
+    if (tabOrigin !== "https://cairois.web.boeing.com") return null;
+
+    const tabRoute = parseCairoSurveyUrl(tab.url);
+    const senderRoute = parseCairoSurveyUrl(sender.url);
+    const messageRoute = typeof message.pageUrl === "string"
+        ? parseCairoSurveyUrl(message.pageUrl)
+        : null;
+    if (message.pageUrl !== undefined && !messageRoute) return null;
+
+    const route = tabRoute || messageRoute || senderRoute;
+    if (!route) return null;
+    for (const candidate of [tabRoute, messageRoute, senderRoute].filter(Boolean)) {
+        if (candidate.assessmentId !== route.assessmentId ||
+            candidate.surveyTemplateId !== route.surveyTemplateId) {
+            throw new Error("The Cairo page has changed. Please try again.");
+        }
+    }
+    return route;
 }
 
 async function writeCairoJob(job) {
@@ -385,13 +420,8 @@ async function handleCairoMessage(message, sender) {
         }
         return { success: true, job };
     }
-    const route = getCairoSenderRoute(sender);
+    const route = await resolveCairoMessageRoute(message, sender);
     if (!route) throw new Error("This action is only available on a Cairo survey page.");
-    const tab = await chrome.tabs.get(sender.tab.id);
-    const currentRoute = parseCairoSurveyUrl(tab.url);
-    if (!currentRoute || currentRoute.assessmentId !== route.assessmentId || currentRoute.surveyTemplateId !== route.surveyTemplateId) {
-        throw new Error("The Cairo page has changed. Please try again.");
-    }
     const eligible = isSupportedCairoSurvey(route, await getCairoTemplates());
     if (message.action === "CAIRO_SURVEY_ELIGIBILITY") return { success: true, eligible };
     if (!eligible) throw new Error("This survey template is not supported by RiskProfiler.");
@@ -467,13 +497,25 @@ const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
 const SESSION_RETRY_INTERVAL_MS = 10000;
 
+chrome.storage.local.get(CONFIG.STORAGE_KEYS.DEBUG).then(saved => {
+    requestDebugLogging = saved[CONFIG.STORAGE_KEYS.DEBUG] === true;
+}).catch(() => {});
+
+chrome.storage.onChanged?.addListener((changes, areaName) => {
+    if (areaName === "local" && changes[CONFIG.STORAGE_KEYS.DEBUG]) {
+        requestDebugLogging = changes[CONFIG.STORAGE_KEYS.DEBUG].newValue === true;
+    }
+});
+
 setRequestRecoveryHandlers({
+    isDebug: () => requestDebugLogging,
     shouldCancel: () => replacingJob || (validationRunning && !reviewRunning && cancellationRequested) ||
         (reviewRunning && !validationRunning && reviewCancellationRequested),
-    onRetry: ({ siteName, attempt }) => trackJob((async () => {
+    onRetry: ({ siteName, attempt, retryInMs }) => trackJob((async () => {
         const generation = jobGeneration;
         if (replacingJob) return;
-        const current = `Waiting for ${siteName} data — retry ${attempt}, checking again in 10 seconds`;
+        const retrySeconds = (retryInMs / 1000).toFixed(retryInMs % 1000 ? 1 : 0);
+        const current = `Waiting for ${siteName} data — retry ${attempt}, checking again in ${retrySeconds} seconds`;
         for (const [running, type] of [[validationRunning, "validation"], [reviewRunning, "review"]]) {
             if (!running) continue;
             const key = `${type}Progress`;
@@ -1173,7 +1215,8 @@ async function clearReviewData() {
 
 async function checkPrerequisite(
     check,
-    assetId
+    assetId,
+    requestId = "prerequisite-check"
 ) {
     let finalUrl = check.url;
     try {
@@ -1208,8 +1251,12 @@ async function checkPrerequisite(
             message: "ESATS fallback session is active; a data endpoint will test the bearer token when an asset is available" };
 
     } catch (error) {
+        const waitingForEsats = check.id === "esats" && /(?:sign-in|bearer token|waiting)/i.test(error.message);
         console.error(`[Risk Profiler][Prerequisite][${check.name}] Check failed.`, {
-            url: check.url, assetId: assetId || null, error: error.message
+            requestId,
+            endpoint: endpointTemplate(finalUrl),
+            assetIdPresent: Boolean(assetId),
+            error: waitingForEsats ? "Waiting for ESATS sign-in/token" : error.message
         });
         return {
 
@@ -1232,20 +1279,21 @@ async function checkPrerequisite(
                 false,
 
             message:
-                error.message
+                waitingForEsats ? "Waiting for ESATS sign-in/token" : error.message
         };
     }
 }
 
-async function checkPrerequisites(previousChecks = [], assetId) {
+async function runPrerequisiteChecks(previousChecks = [], assetId, checkId = "prerequisite-check") {
     const generation = jobGeneration;
+    const startedAt = Date.now();
     const checkById = new Map(PREREQUISITE_CHECKS.map(check => [check.id, check]));
     const previousCairo = previousChecks.find(previous => previous.id === "cairo" && previous.passed);
-    const cairo = previousCairo || await checkPrerequisite(checkById.get("cairo"), assetId);
+    const cairo = previousCairo || await checkPrerequisite(checkById.get("cairo"), assetId, checkId);
     const probeAssetId = assetId || cairo.probeAssetId;
     const remaining = await Promise.all(["esats", "gtc"].map(id =>
         previousChecks.find(previous => previous.id === id && previous.passed) ||
-        checkPrerequisite(checkById.get(id), probeAssetId)
+        checkPrerequisite(checkById.get(id), probeAssetId, checkId)
     ));
     const checks = [cairo, ...remaining];
 
@@ -1265,7 +1313,58 @@ async function checkPrerequisites(previousChecks = [], assetId) {
 
     if (generation === jobGeneration) await chrome.storage.local.set({ prerequisiteStatus: result });
 
+    console.info("[Risk Profiler][Prerequisites] Check completed.", {
+        requestId: checkId,
+        durationMs: Date.now() - startedAt,
+        passed: result.passed,
+        checks: checks.map(check => ({ id: check.id, passed: check.passed, mode: check.mode || null }))
+    });
+
     return result;
+}
+
+async function checkPrerequisites(previousChecks = [], assetId, options = {}) {
+    const force = options.force === true || previousChecks.length > 0 || Boolean(assetId);
+    if (prerequisiteCheckInFlight) return prerequisiteCheckInFlight;
+
+    const work = (async () => {
+        if (!force) {
+            const saved = await chrome.storage.local.get("prerequisiteStatus");
+            const cached = saved.prerequisiteStatus;
+            if (cached?.checkedAt && Date.now() - cached.checkedAt < PREREQUISITE_FRESHNESS_MS) {
+                console.info("[Risk Profiler][Prerequisites] Reused a recent check.", {
+                    requestId: options.requestId || "prerequisite-cache",
+                    ageMs: Date.now() - cached.checkedAt,
+                    passed: cached.passed
+                });
+                return { ...cached, reused: true };
+            }
+        }
+
+        const checkId = options.requestId || `prerequisite-${Date.now().toString(36)}`;
+        return runPrerequisiteChecks(previousChecks, assetId, checkId);
+    })();
+    const shared = work.finally(() => {
+        if (prerequisiteCheckInFlight === shared) prerequisiteCheckInFlight = null;
+    });
+    prerequisiteCheckInFlight = shared;
+    return shared;
+}
+
+async function recheckEsatsAfterTabLoad() {
+    const saved = await chrome.storage.local.get([
+        "prerequisiteStatus",
+        CONFIG.STORAGE_KEYS.ASSESSMENTS
+    ]);
+    const previous = saved.prerequisiteStatus?.checks || [];
+    const esats = previous.find(check => check.id === "esats");
+    if (!esats || esats.passed) return;
+    const assetId = previous.find(check => check.id === "cairo")?.probeAssetId ||
+        saved[CONFIG.STORAGE_KEYS.ASSESSMENTS]?.find(item => /^[1-9]\d*$/.test(String(item?.assetId ?? "")))?.assetId;
+    await checkPrerequisites(previous, assetId, {
+        force: true,
+        requestId: `esats-tab-${Date.now().toString(36)}`
+    });
 }
 
 function delay(
@@ -1310,7 +1409,7 @@ async function waitForPrerequisiteSessions({
         }
 
         const prerequisites =
-            await interruptible(checkPrerequisites(previousChecks, assetId), stopSignal);
+            await interruptible(checkPrerequisites(previousChecks, assetId, { force: true }), stopSignal);
         previousChecks = prerequisites.checks;
         attempt++;
 
@@ -1509,7 +1608,10 @@ chrome.runtime.onMessage.addListener(
                                 success: true,
 
                                 prerequisites:
-                                    await checkPrerequisites()
+                                    await checkPrerequisites([], undefined, {
+                                        force: message.force === true,
+                                        requestId: typeof message.requestId === "string" ? message.requestId : undefined
+                                    })
                             });
 
                             break;
@@ -1608,6 +1710,16 @@ async function scheduleSurveyTemplateRefresh() {
         }
     );
 }
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status !== "complete" || !tab?.url?.startsWith("https://esats.web.boeing.com/")) return;
+    trackJob(recheckEsatsAfterTabLoad()).catch(error => {
+        console.warn("[Risk Profiler][ESATS] Automatic prerequisite recheck after tab load failed.", {
+            tabId,
+            error: error.message
+        });
+    });
+});
 
 chrome.runtime.onInstalled.addListener(
     async () => {

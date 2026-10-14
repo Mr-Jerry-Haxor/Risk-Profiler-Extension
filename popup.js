@@ -134,6 +134,7 @@ const DEFAULT_PLUGIN_LAYOUT = "side-pane";
 
 const cairoView = new URLSearchParams(location.search).get("view") === "cairo";
 const cairoJobId = new URLSearchParams(location.search).get("job");
+let prerequisiteCheckRunning = false;
 
 /*
 ====================================================
@@ -219,7 +220,17 @@ async function initialize() {
 
     attachEvents();
 
-    await loadPrerequisiteStatus();
+    // Popup documents are recreated when opened. Side panels may be retained by
+    // the browser, so recheck whenever a retained panel becomes visible again.
+    checkPrerequisites();
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) checkPrerequisites();
+    });
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local" && changes.prerequisiteStatus?.newValue) {
+            renderPrerequisites(changes.prerequisiteStatus.newValue);
+        }
+    });
 
     startProgressPolling();
 
@@ -1526,7 +1537,7 @@ function attachEvents() {
     $("checkPrereqBtn")
         ?.addEventListener(
             "click",
-            checkPrerequisites
+            () => checkPrerequisites(true)
         );
 
     $("selectAllBtn")
@@ -4623,7 +4634,13 @@ async function loadPrerequisiteStatus() {
     }
 }
 
-async function checkPrerequisites() {
+async function checkPrerequisites(force = false) {
+
+    if (prerequisiteCheckRunning) {
+        return;
+    }
+
+    prerequisiteCheckRunning = true;
 
     setPrerequisitesChecking();
 
@@ -4633,7 +4650,12 @@ async function checkPrerequisites() {
             await chrome.runtime.sendMessage({
 
                 action:
-                    "CHECK_PREREQUISITES"
+                    "CHECK_PREREQUISITES",
+
+                force,
+
+                requestId:
+                    `prerequisite-ui-${Date.now().toString(36)}`
             });
 
         if (
@@ -4648,6 +4670,12 @@ async function checkPrerequisites() {
             if (
                 response.prerequisites.passed
             ) {
+
+                if (response.prerequisites.reused && !force) {
+                    $("prereqSummary").textContent =
+                        "All prerequisite data sources were checked recently and remain accessible.";
+                    return;
+                }
 
                 $("prereqSummary").textContent =
                     "All prerequisite data sources are accessible. Refreshing assessments...";
@@ -4681,6 +4709,9 @@ async function checkPrerequisites() {
                 signal.className =
                     "signal signal-fail";
             });
+    } finally {
+
+        prerequisiteCheckRunning = false;
     }
 }
 
@@ -4770,7 +4801,9 @@ function renderPrerequisites(
                     : check.openedTab
                         ? `Needs sign-in (${check.name} tab opened)`
                         : check.id === "esats"
-                            ? "Token/sign-in unavailable"
+                            ? check.message === "Waiting for ESATS sign-in/token"
+                                ? "Waiting for ESATS sign-in/token"
+                                : "Token/sign-in unavailable"
                             : "Direct access unavailable";
         }
 

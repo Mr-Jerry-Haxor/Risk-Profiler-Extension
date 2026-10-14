@@ -6,10 +6,13 @@ const requestControllers = new Set();
 const recoveryState = new Map();
 let cacheGeneration = 0;
 let cachedEsatsToken = null;
+let requestSequence = 0;
 
 export const SITE_RETRY_INTERVAL_MS = 10000;
 const REQUEST_TIMEOUT_MS = 10000;
 const GTC_REQUEST_TIMEOUT_MS = 30000;
+const CAIRO_RETRY_DELAYS_MS = [2000, 5000, 10000];
+const RETRY_JITTER_MS = 250;
 const TAB_RECOVERY_COOLDOWN_MS = 60000;
 const ESATS_TOKEN_STORAGE_KEY = "riskProfilerEsatsBearerToken";
 const SITES = {
@@ -23,8 +26,43 @@ function requestTimeoutFor(site) {
     return site?.id === "gtc" ? GTC_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 
-function logRequestMode(site, message, details = {}) {
-    console.info(`[Risk Profiler][${site.label}] ${message}`, details);
+function requestId() {
+    requestSequence++;
+    return `request-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
+}
+
+export function endpointTemplate(rawUrl) {
+    try {
+        const url = new URL(rawUrl);
+        const path = url.pathname
+            .replace(/\/\d+(?=\/|$)/g, "/{id}")
+            .replace(/\/name\/[^/]+\.json$/i, "/name/{name}.json");
+        const query = [...new Set([...url.searchParams.keys()])]
+            .sort()
+            .map(key => `${encodeURIComponent(key)}={value}`)
+            .join("&");
+        return `${url.origin}${path}${query ? `?${query}` : ""}`;
+    } catch {
+        return "invalid-url";
+    }
+}
+
+function logRequestMode(site, message, details = {}, { debug = false, level = "info" } = {}) {
+    if (debug && recoveryHandlers.isDebug?.() !== true) return;
+    const safeDetails = { ...details };
+    if (safeDetails.url) {
+        safeDetails.endpoint = endpointTemplate(safeDetails.url);
+        if (recoveryHandlers.isDebug?.() !== true) delete safeDetails.url;
+    }
+    const logger = console[level] || console.info;
+    logger.call(console, `[Risk Profiler][${site.label}] ${message}`, safeDetails);
+}
+
+export function retryDelayFor(siteId, attempt) {
+    if (siteId !== "cairo") return SITE_RETRY_INTERVAL_MS;
+    const base = CAIRO_RETRY_DELAYS_MS[Math.min(Math.max(attempt - 1, 0), CAIRO_RETRY_DELAYS_MS.length - 1)];
+    const jitter = Math.round((Math.random() * 2 - 1) * RETRY_JITTER_MS);
+    return Math.max(500, base + jitter);
 }
 
 function normalizeToken(raw) {
@@ -254,9 +292,6 @@ async function fetchFromTab(url, site, tab, probe = false) {
     }
     if (site.bearer && result.bearerToken) {
         await storeEsatsToken(result.bearerToken);
-        logRequestMode(site, "Fallback tab request succeeded; cached its bearer token for direct requests.", {
-            url, mode: "tab-fallback", tokenPresent: true
-        });
     }
     return result.data;
 }
@@ -341,9 +376,12 @@ export async function probeDirectEndpoint(siteId, url) {
         .some(([host, item]) => item.id === siteId && requestUrl.hostname === host)) {
         throw requestError("Invalid direct prerequisite probe", 0, false);
     }
+    const id = requestId();
+    const startedAt = Date.now();
     logRequestMode(site, "Checking direct endpoint access without a website tab.", {
-        url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite"
-    });
+        requestId: id, attempt: 1, durationMs: 0, url,
+        mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite"
+    }, { debug: true });
     try {
         const response = await fetch(url, {
             credentials: site.id === "cairo" ? "include" : "omit",
@@ -364,15 +402,17 @@ export async function probeDirectEndpoint(siteId, url) {
             }
         }
         logRequestMode(site, "Direct prerequisite check succeeded; no website tab was used.", {
-            url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
+            requestId: id, attempt: 1, durationMs: Date.now() - startedAt, url,
+            mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
             status: response.status
-        });
+        }, { debug: true });
         return { reachable: true, status: response.status };
     } catch (error) {
         logRequestMode(site, "Direct prerequisite check failed; no website tab was opened.", {
-            url, mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
+            requestId: id, attempt: 1, durationMs: Date.now() - startedAt, url,
+            mode: site.id === "cairo" ? "direct-cookies" : "direct-prerequisite",
             status: error.status || 0, error: error.message
-        });
+        }, { level: "error" });
         throw error;
     }
 }
@@ -397,14 +437,19 @@ async function fetchDirectJson(url, site, bearerToken = null) {
 
 async function performRequest(url, config, site, signal) {
     let attempt = 0;
+    const id = requestId();
+    const requestStartedAt = Date.now();
     while (true) {
         if (signal.aborted || config.shouldCancel?.() || recoveryHandlers.shouldCancel?.()) throw requestError("Request cancelled by user", 0, false);
         attempt++;
+        const attemptStartedAt = Date.now();
+        let mode = "direct";
         try {
             let data;
             if (config.sessionProbe) {
+                mode = "tab-session-probe";
                 logRequestMode(site, "Using the existing website-session probe as a fallback.", {
-                    url, mode: "tab-session-probe"
+                    requestId: id, attempt, durationMs: 0, url, mode
                 });
                 data = await fetchTrustedJson(
                     url,
@@ -414,42 +459,50 @@ async function performRequest(url, config, site, signal) {
                     config.allowTabRecovery !== false
                 );
                 logRequestMode(site, "Website-session fallback probe succeeded.", {
-                    url, mode: "tab-session-probe"
-                });
+                    requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode
+                }, { debug: true });
             }
             else if (site?.bearer) {
                 const tokenState = await findEsatsToken(site, signal);
                 if (tokenState.token) {
+                    mode = "direct-bearer";
                     logRequestMode(site, "Trying a direct gateway request with a bearer token.", {
-                        url, mode: "direct-bearer", tokenSource: tokenState.source, tokenPresent: true
-                    });
+                        requestId: id, attempt, durationMs: 0, url, mode,
+                        tokenSource: tokenState.source, tokenPresent: true
+                    }, { debug: true });
                     try {
                         data = await fetchDirectJson(url, site, tokenState.token);
                         logRequestMode(site, "Direct bearer-token request succeeded.", {
-                            url, mode: "direct-bearer", tokenSource: tokenState.source
-                        });
+                            requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode,
+                            tokenSource: tokenState.source
+                        }, { debug: true });
                     } catch (error) {
                         if ([401, 403].includes(error.status)) await clearEsatsToken();
+                        mode = "tab-fallback";
                         logRequestMode(site, "Direct bearer-token request failed; using the existing ESATS tab fallback.", {
-                            url, mode: "tab-fallback", status: error.status || 0, error: error.message
+                            requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode,
+                            status: error.status || 0, error: error.message
                         });
                         data = await fetchTrustedJson(url, site, signal, false, config.allowTabRecovery !== false);
                     }
                 } else {
+                    mode = "tab-fallback";
                     logRequestMode(site, "No bearer token was available for a direct request; using the existing ESATS tab fallback.", {
-                        url, mode: "tab-fallback", tokenPresent: false
+                        requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode,
+                        tokenPresent: false
                     });
                     data = await fetchTrustedJson(url, site, signal, false, config.allowTabRecovery !== false);
                 }
             }
             else if (site?.direct) {
+                mode = site.id === "cairo" ? "direct-cookies" : "direct";
                 logRequestMode(site, `Trying a direct ${site.id === "cairo" ? "cookie-authenticated" : "extension"} request.`, {
-                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct"
-                });
+                    requestId: id, attempt, durationMs: 0, url, mode
+                }, { debug: true });
                 data = await fetchDirectJson(url, site);
                 logRequestMode(site, "Direct request succeeded; no website tab was used.", {
-                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct"
-                });
+                    requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode
+                }, { debug: true });
             }
             else {
                 data = await fetchDirectJson(url, site);
@@ -459,23 +512,35 @@ async function performRequest(url, config, site, signal) {
             if (status >= 400) throw requestError(`HTTP ${status}`, status, isRetryableStatus(status));
             const normalized = unwrapApiResponse(data);
             if (config.useCache && config.cacheGeneration === cacheGeneration) memoryCache.set(url, normalized);
-            return normalized;
-        } catch (error) {
-            if (site?.directOnly) {
-                logRequestMode(site, "Direct request failed; no website tab will be opened.", {
-                    url, mode: site.id === "cairo" ? "direct-cookies" : "direct",
-                    status: error.status || 0, error: error.message
+            if (attempt > 1 || mode === "tab-fallback") {
+                logRequestMode(site, "Request recovered successfully.", {
+                    requestId: id, attempt, durationMs: Date.now() - requestStartedAt, url, mode
                 });
             }
+            return normalized;
+        } catch (error) {
             if (signal.aborted) throw requestError("Request cancelled by user", 0, false);
             const keepWaiting = site && config.retryUntilAvailable && error.retryable !== false;
-            if (!keepWaiting && (error.retryable === false || attempt >= config.retries)) throw error;
+            const finalFailure = !keepWaiting && (error.retryable === false || attempt >= config.retries);
+            if (finalFailure) {
+                logRequestMode(site || { label: "Request" }, "Request failed.", {
+                    requestId: id, attempt, durationMs: Date.now() - requestStartedAt, url, mode,
+                    status: error.status || 0, error: error.message,
+                    tabFallbackAllowed: site?.directOnly ? false : undefined
+                }, { level: "error" });
+                throw error;
+            }
+            const retryInMs = site ? retryDelayFor(site.id, attempt) : config.retryDelay;
+            logRequestMode(site || { label: "Request" }, "Request failed; retry scheduled.", {
+                requestId: id, attempt, durationMs: Date.now() - attemptStartedAt, url, mode,
+                status: error.status || 0, error: error.message, retryInMs
+            }, { level: "warn" });
             if (keepWaiting) {
                 // Status/UI failures must not stop the actual data recovery loop.
                 try { await recoveryHandlers.onRetry?.({ siteId: site.id, siteName: site.label, attempt,
-                    retryInMs: SITE_RETRY_INTERVAL_MS, error: error.message }); } catch { /* Keep retrying the endpoint. */ }
+                    retryInMs, error: error.message, requestId: id }); } catch { /* Keep retrying the endpoint. */ }
             }
-            await sleep(site ? SITE_RETRY_INTERVAL_MS : config.retryDelay);
+            await sleep(retryInMs);
         }
     }
 }

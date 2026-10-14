@@ -70,7 +70,8 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
         runtime: { id: "test-extension", getURL: file => `chrome-extension://test-extension/${file}`, onMessage: event("message"), onInstalled: event("installed"), onStartup: event("startup") },
         tabs: {
             get: async () => ({ id: 1, url: routeUrl }),
-            query: async () => []
+            query: async () => [],
+            onUpdated: event("tabUpdated")
         },
         sidePanel: { setOptions: async () => {}, setPanelBehavior: async () => {} },
         action: { setPopup: async () => {} },
@@ -85,6 +86,7 @@ async function workerHarness({ templateError = false, detailId = 616901 } = {}) 
     const context = vm.createContext({
         chrome, CONFIG, PREREQUISITE_CHECKS, URLS, URL, AbortController, crypto: webcrypto, console,
         parseCairoSurveyUrl, isSupportedCairoSurvey, resolveCairoAssessment,
+        endpointTemplate: url => url.replace(/=\d+$/, "={value}"),
         setInterval() {}, setTimeout, sessionReady,
         setRequestRecoveryHandlers() {},
         rememberSiteTab() {},
@@ -196,12 +198,12 @@ test("passive template refresh preserves the cache when the open Cairo session i
     assert.equal(h.local.values.supportedSurveyTemplateIdsUpdatedAt, 123);
 });
 
-test("opening the popup or side panel does not automatically check website sessions", async () => {
+test("opening the popup or side panel automatically checks prerequisite data access", async () => {
     const source = await readFile(new URL("../popup.js", import.meta.url), "utf8");
     const initializeBody = source.match(/async function initialize\(\) \{([\s\S]*?)\n\}\n\nasync function initializeCairoView/);
     assert.ok(initializeBody);
-    assert.doesNotMatch(initializeBody[1], /checkPrerequisites\s*\(/);
-    assert.match(initializeBody[1], /loadPrerequisiteStatus\s*\(/);
+    assert.match(initializeBody[1], /checkPrerequisites\s*\(\)/);
+    assert.match(initializeBody[1], /visibilitychange/);
 });
 
 test("side-pane content defaults to 550px while remaining responsive to user resizing", async () => {
@@ -243,9 +245,25 @@ test("ESATS readiness checks a token-backed gateway endpoint when an asset is av
     assert.equal(result.mode, "bearer-with-fallback");
 });
 
+test("ESATS first-login failures report the token wait and the actual gateway URL", async () => {
+    const h = await workerHarness();
+    const errors = [];
+    h.context.console = { ...console, error: (...args) => errors.push(args) };
+    h.context.fetchJson = async () => { throw new Error("ESATS is waiting for sign-in."); };
+    const check = PREREQUISITE_CHECKS.find(item => item.id === "esats");
+    const result = await h.context.checkPrerequisite(check, "40326");
+    const expectedUrl = URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326");
+    assert.equal(result.passed, false);
+    assert.equal(result.message, "Waiting for ESATS sign-in/token");
+    assert.equal(result.finalUrl, expectedUrl);
+    assert.equal(errors[0][1].endpoint, expectedUrl.replace("40326", "{value}"));
+    assert.equal(errors[0][1].assetIdPresent, true);
+    assert.equal(errors[0][1].error, "Waiting for ESATS sign-in/token");
+});
+
 test("successful manual session checks automatically refresh assessments", async () => {
     const source = await readFile(new URL("../popup.js", import.meta.url), "utf8");
-    const body = source.match(/async function checkPrerequisites\(\) \{([\s\S]*?)\n\}\n\nfunction setPrerequisitesChecking/);
+    const body = source.match(/async function checkPrerequisites\([^)]*\) \{([\s\S]*?)\n\}\n\nfunction setPrerequisitesChecking/);
     assert.ok(body);
     assert.match(body[1], /response\.prerequisites\.passed/);
     assert.match(body[1], /await refreshAssessments\(\)/);
@@ -277,6 +295,57 @@ test("a first manual prerequisite check uses Cairo's returned asset ID for the E
     assert.equal(requests[0], URLS.PRIMARY_ASSESSMENTS);
     assert.equal(requests[1], URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326"));
     assert.equal(result.checks.find(check => check.id === "esats").mode, "bearer-with-fallback");
+});
+
+test("background prerequisite checks share in-flight work and reuse a fresh result unless forced", async () => {
+    const h = await workerHarness();
+    const counts = { cairo: 0, esats: 0, gtc: 0 };
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    h.context.checkPrerequisite = async check => {
+        counts[check.id]++;
+        await gate;
+        return { id: check.id, name: check.name, passed: true, mode: "test" };
+    };
+    const first = h.context.checkPrerequisites();
+    const second = h.context.checkPrerequisites();
+    await flush();
+    assert.deepEqual(counts, { cairo: 1, esats: 0, gtc: 0 });
+    release();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(firstResult.checks, secondResult.checks);
+    assert.deepEqual(counts, { cairo: 1, esats: 1, gtc: 1 });
+
+    const cached = await h.context.checkPrerequisites();
+    assert.equal(cached.reused, true);
+    assert.deepEqual(counts, { cairo: 1, esats: 1, gtc: 1 });
+
+    await h.context.checkPrerequisites([], undefined, { force: true });
+    assert.deepEqual(counts, { cairo: 2, esats: 2, gtc: 2 });
+});
+
+test("a completed ESATS tab automatically reruns a failed ESATS prerequisite", async () => {
+    const h = await workerHarness();
+    await h.local.set({
+        prerequisiteStatus: {
+            passed: false,
+            checkedAt: Date.now(),
+            checks: [
+                { id: "cairo", name: "Cairo", passed: true, probeAssetId: "40326", mode: "direct-cookies" },
+                { id: "esats", name: "ESATS", passed: false, message: "Waiting for ESATS sign-in/token" },
+                { id: "gtc", name: "GTC", passed: true, mode: "direct" }
+            ]
+        }
+    });
+    const checked = [];
+    h.context.checkPrerequisite = async (check, assetId) => {
+        checked.push({ id: check.id, assetId });
+        return { id: check.id, name: check.name, passed: true, mode: "bearer-with-fallback" };
+    };
+    h.listeners.tabUpdated(7, { status: "complete" }, { id: 7, url: "https://esats.web.boeing.com/" });
+    await flush();
+    assert.deepEqual(checked, [{ id: "esats", assetId: "40326" }]);
+    assert.equal(h.local.values.prerequisiteStatus.passed, true);
 });
 
 test("background start succeeds without a popup and waits for sessions before validation", async () => {
@@ -352,6 +421,19 @@ test("background rejects unauthorized frames, navigation races, and invalid mode
     assert.equal((await h.send({ action: "START_CAIRO_JOB", mode: "delete" })).success, false);
     assert.equal((await h.send({ action: "GET_CAIRO_JOB", jobId: "bad" }, h.viewSender)).success, false);
     assert.equal((await h.send({ action: "GET_CAIRO_JOB", jobId: webcrypto.randomUUID() })).success, false);
+});
+
+test("Cairo actions accept the content-reported survey route while sender and tab metadata lag SPA navigation", async () => {
+    const h = await workerHarness();
+    const staleSender = { ...h.sender, url: "https://cairois.web.boeing.com/" };
+    h.chrome.tabs.get = async () => ({ id: 1, url: "https://cairois.web.boeing.com/" });
+    const eligibility = await h.send({ action: "CAIRO_SURVEY_ELIGIBILITY", pageUrl: routeUrl }, staleSender);
+    assert.equal(eligibility.success, true);
+    assert.equal(eligibility.eligible, true);
+    const start = await h.send({ action: "START_CAIRO_JOB", mode: "validation", pageUrl: routeUrl }, staleSender);
+    assert.equal(start.success, true);
+    h.releaseSession();
+    await flush();
 });
 
 test("template mismatch produces a visible error without running the engines", async () => {
@@ -520,6 +602,7 @@ test("content injects two buttons immediately before outline without duplication
     await flush();
     assert.equal(h.calls.at(-1).action, "START_CAIRO_JOB");
     assert.equal(h.calls.at(-1).mode, "validation");
+    assert.equal(h.calls.at(-1).pageUrl, routeUrl);
     const dialog = h.body.children.find(element => element.tagName === "dialog");
     assert.equal(dialog.open, true);
     assert.match(dialog.children[1].src, /popup.html\?view=cairo&job=test-job$/);
