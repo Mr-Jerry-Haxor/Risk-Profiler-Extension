@@ -1138,12 +1138,23 @@ async function savePluginLayoutSetting() {
                 ? "side-pane"
                 : DEFAULT_PLUGIN_LAYOUT;
 
-        const response =
-            await chrome.runtime.sendMessage({
+        const layoutUpdate =
+            chrome.runtime.sendMessage({
                 action:
                     "SET_PLUGIN_LAYOUT",
                 mode
             });
+
+        const firefoxSidebarOpening =
+            mode === "side-pane" &&
+            !document.body.classList.contains("side-pane") &&
+            !chrome.sidePanel &&
+            chrome.sidebarAction
+                ? chrome.sidebarAction.open()
+                : null;
+
+        const response =
+            await layoutUpdate;
 
         if (!response?.success) {
 
@@ -1171,14 +1182,20 @@ async function savePluginLayoutSetting() {
             )
         ) {
 
-            const currentWindow =
-                await chrome.windows.getCurrent();
+            if (chrome.sidePanel) {
 
-            await chrome.sidePanel.open({
-                windowId:
-                    currentWindow.id
-            });
+                const currentWindow =
+                    await chrome.windows.getCurrent();
+
+                await chrome.sidePanel.open({
+                    windowId:
+                        currentWindow.id
+                });
+
+            }
         }
+
+        await firefoxSidebarOpening;
 
         status.textContent =
             mode === "side-pane"

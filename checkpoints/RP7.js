@@ -187,6 +187,7 @@ function classificationCode(
     }
 
     if (
+        normalized.includes("earn") ||
         normalized.includes(
             "ear-nlr"
         ) ||

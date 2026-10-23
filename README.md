@@ -62,7 +62,7 @@ The extension uses the following stack:
 | Edge extension platform | Microsoft Edge Manifest V3 | Runs the popup UI and service worker automation inside Microsoft Edge. |
 | UI | HTML, CSS, vanilla JavaScript ES modules | Popup interface, assessment filters, tabs, progress, results, modals, review notes. |
 | Background execution | MV3 service worker | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh. |
-| Bundling | esbuild | Bundles `popup.js` and `service_worker.js` into `dist/`. |
+| Bundling | esbuild | Builds shared sources for Chromium and Firefox under `dist/`. |
 | Storage | Edge extension local storage with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
 | API access | Direct `fetch()` with Cairo cookies, direct GTC requests, and ESATS bearer-token fallback | Cairo and GTC do not require open tabs. ESATS prefers a session-cached bearer token and retains its trusted-tab fallback. |
 | Validation engine | Local JavaScript checkpoint modules `RP1` through `RP14` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
@@ -654,25 +654,39 @@ Install dependencies:
 npm install
 ```
 
-Build the extension:
+Build both browser packages from the same source tree:
 
 ```bash
 npm run build
 ```
 
-Load in Microsoft Edge:
+The build creates:
+
+- `dist/chromium/` and `dist/risk-profiler-chromium-1.3.zip`
+- `dist/firefox/`, `dist/risk-profiler-firefox-1.3.zip`, and `dist/risk-profiler-firefox-1.3.xpi`
+
+Load in Microsoft Edge or Chrome:
 
 1. Open `edge://extensions`.
 2. Enable Developer mode.
 3. Click `Load unpacked`.
-4. Select the `dist/` folder.
+4. Select the `dist/chromium/` folder.
 5. Confirm Cairo WSSO and ESATS authentication when required, then run **Check Sessions**. No GTC login or open Cairo/GTC tab is required.
+
+Load temporarily in Firefox 140 or newer:
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on**.
+3. Select `dist/firefox/manifest.json` or the generated Firefox XPI.
+4. Confirm Cairo WSSO and ESATS authentication when required, then run **Check Sessions**.
+
+The Firefox XPI produced locally is unsigned. Standard Firefox Release/Beta requires Mozilla signing before permanent installation; Developer Edition, Nightly, enterprise deployment, or temporary loading can use the development package according to the applicable browser policy.
 
 ## Current Version
 
 ```text
-Extension version: 1.2.0
-Manifest: Microsoft Edge Manifest V3
+Extension version: 1.3
+Manifest: Chromium and Firefox Manifest V3 packages from shared sources
 Primary modes: Validation Mode, Initial Review Mode, and Review Based on Selected Answers
 ```
 

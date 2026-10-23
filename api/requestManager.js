@@ -148,6 +148,19 @@ function chromeCall(method, ...args) {
         // A navigating/discarded page can leave executeScript's callback unresolved.
         const timer = setTimeout(() => reject(requestError("Browser/page operation timed out")), REQUEST_TIMEOUT_MS);
         try {
+            if (globalThis.browser && chrome === globalThis.browser) {
+                Promise.resolve(method(...args)).then(
+                    result => {
+                        clearTimeout(timer);
+                        resolve(result);
+                    },
+                    error => {
+                        clearTimeout(timer);
+                        reject(requestError(error.message));
+                    }
+                );
+                return;
+            }
             method(...args, result => {
                 clearTimeout(timer);
                 const error = chrome.runtime.lastError;

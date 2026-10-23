@@ -534,21 +534,34 @@ async function configurePluginLayout(
 ) {
 
     const mode =
-        requestedMode === "side-pane"
+        requestedMode === "side-pane" &&
+        (chrome.sidePanel || chrome.sidebarAction)
             ? "side-pane"
             : "popup";
 
-    await chrome.sidePanel.setOptions({
-        path:
-            "popup.html?view=side-pane",
-        enabled:
-            mode === "side-pane"
-    });
+    currentPluginLayout = mode;
 
-    await chrome.sidePanel.setPanelBehavior({
-        openPanelOnActionClick:
-            mode === "side-pane"
-    });
+    if (chrome.sidePanel) {
+
+        await chrome.sidePanel.setOptions({
+            path:
+                "popup.html?view=side-pane",
+            enabled:
+                mode === "side-pane"
+        });
+
+        await chrome.sidePanel.setPanelBehavior({
+            openPanelOnActionClick:
+                mode === "side-pane"
+        });
+
+    } else if (chrome.sidebarAction) {
+
+        await chrome.sidebarAction.setPanel({
+            panel:
+                "popup.html?view=side-pane"
+        });
+    }
 
     await chrome.action.setPopup({
         popup:
@@ -563,6 +576,26 @@ async function configurePluginLayout(
     });
 
     return mode;
+}
+
+let currentPluginLayout = DEFAULT_PLUGIN_LAYOUT;
+
+if (
+    chrome.sidebarAction &&
+    chrome.action?.onClicked
+) {
+
+    chrome.action.onClicked.addListener(
+        () => {
+
+            if (currentPluginLayout === "side-pane") {
+
+                // Firefox requires sidebarAction.open() to run directly in a
+                // user-action handler. Do not await other work before it.
+                chrome.sidebarAction.open();
+            }
+        }
+    );
 }
 
 async function restorePluginLayout() {

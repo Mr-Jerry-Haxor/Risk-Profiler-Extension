@@ -41,7 +41,7 @@ test("passive Cairo requests fail without opening or recovering a tab", async ()
     assert.equal(h.creations.length, 0);
 });
 
-async function harness() {
+async function harness({ promiseBrowser = false } = {}) {
     const tabs = new Map();
     const timers = [];
     const requests = [];
@@ -75,12 +75,23 @@ async function harness() {
         runtime: {},
         storage: { session: sessionStorageArea },
         tabs: {
-            query(query, callback) { callback([...tabs.values()].filter(tab => tab.url.startsWith(query.url.slice(0, -1)))); },
+            query(query, callback) {
+                const result = [...tabs.values()].filter(tab => tab.url.startsWith(query.url.slice(0, -1)));
+                if (promiseBrowser) return Promise.resolve(result);
+                callback(result);
+            },
             get(id, callback) {
+                if (promiseBrowser) return tabs.has(id) ? Promise.resolve(tabs.get(id)) : Promise.reject(new Error("Tab closed"));
                 if (!tabs.has(id)) { chrome.runtime.lastError = { message: "Tab closed" }; callback(); delete chrome.runtime.lastError; }
                 else callback(tabs.get(id));
             },
-            create(options, callback) { const tab = { id: nextId++, url: options.url, status: "loading" }; tabs.set(tab.id, tab); creations.push(tab); callback(tab); }
+            create(options, callback) {
+                const tab = { id: nextId++, url: options.url, status: "loading" };
+                tabs.set(tab.id, tab);
+                creations.push(tab);
+                if (promiseBrowser) return Promise.resolve(tab);
+                callback(tab);
+            }
         },
         scripting: {
             executeScript(details, callback) {
@@ -93,13 +104,16 @@ async function harness() {
                     localStorage: { getItem: () => tabTokens.get(tab.id) ?? tokens.get(new URL(tab.url).origin) ?? null },
                     sessionStorage: { getItem: () => sessionTokens.get(tab.id) || null }
                 });
-                Promise.resolve(fn(...(details.args || []))).then(result => callback([{ result }]));
+                const result = Promise.resolve(fn(...(details.args || []))).then(value => [{ result: value }]);
+                if (promiseBrowser) return result;
+                result.then(callback);
             }
         }
     };
     const deterministicMath = Object.create(Math);
     deterministicMath.random = () => 0.5;
-    const context = vm.createContext({ URL, AbortSignal, AbortController, chrome, fetch,
+    const context = vm.createContext({ URL, AbortSignal, AbortController, chrome,
+        browser: promiseBrowser ? chrome : undefined, fetch,
         Math: deterministicMath,
         console: {
             info: (...args) => logs.info.push(args),
@@ -127,6 +141,16 @@ async function harness() {
     };
     return { context, tabs, tokens, tabTokens, sessionTokens, brokenTabs, clock, timers, requests, creations, replies, addTab, tick, sessionStorageArea, logs };
 }
+
+test("Firefox promise-based browser APIs use the shared request and injection path", async () => {
+    const h = await harness({ promiseBrowser: true });
+    const tab = h.addTab("https://cairois.web.boeing.com");
+    tab.url += "Assessments/41559874/Survey/616901";
+    h.replies.set(cairoUrl, [{ status: 200, data: { ready: true } }]);
+
+    assert.deepEqual(await h.context.fetchJson(cairoUrl), { ready: true });
+    assert.equal(h.creations.length, 0);
+});
 
 test("Cairo retries progress through 2, 5 and 10 seconds while other sites retain ten seconds", async () => {
     const h = await harness();

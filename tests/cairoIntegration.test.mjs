@@ -777,15 +777,15 @@ test("unsupported templates do not inject; SPA navigation removes old buttons", 
 });
 
 test("built package includes the content script and Cairo-only result frame", async () => {
-    const manifest = JSON.parse(await readFile(new URL("../dist/manifest.json", import.meta.url), "utf8"));
+    const manifest = JSON.parse(await readFile(new URL("../dist/chromium/manifest.json", import.meta.url), "utf8"));
     assert.deepEqual(manifest.content_scripts[0].js, ["cairoSurvey.bundle.js"]);
     assert.equal(manifest.content_scripts[0].all_frames, false);
     const frame = manifest.web_accessible_resources.find(resource => resource.resources.includes("popup.html"));
     assert.deepEqual(frame.matches, ["https://cairois.web.boeing.com/*"]);
-    const html = await readFile(new URL("../dist/popup.html", import.meta.url), "utf8");
+    const html = await readFile(new URL("../dist/chromium/popup.html", import.meta.url), "utf8");
     assert.match(html, /popup.bundle.js/);
     assert.match(html, /cairoReviewEmailBtn/);
-    assert.ok((await readFile(new URL("../dist/cairoSurvey.bundle.js", import.meta.url), "utf8")).length > 0);
+    assert.ok((await readFile(new URL("../dist/chromium/cairoSurvey.bundle.js", import.meta.url), "utf8")).length > 0);
 });
 
 async function popupHarness(job, emailEnabled = false) {
