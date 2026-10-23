@@ -1,6 +1,6 @@
 # Risk Profiler Review and Validate Automation
 
-## Overview
+## Overview 
 
 Risk Profiler Review and Validate Automation is a Microsoft Edge Manifest V3 extension for Risk Profiler assessment review, validation, reporting, and documentation. It helps users load Risk Profiler application assessments from Cairo, filter and select assessments, validate selected assessments against a defined checkpoint list, review assessment migration/readiness items, export validation results to Excel, and download formatted Word review notes with selected questions, ASA Notes, contact details, and clickable checkbox controls.
 
@@ -57,19 +57,19 @@ Business value:
 
 The extension uses the following stack:
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| Edge extension platform | Microsoft Edge Manifest V3 | Runs the popup UI and service worker automation inside Microsoft Edge. |
-| UI | HTML, CSS, vanilla JavaScript ES modules | Popup interface, assessment filters, tabs, progress, results, modals, review notes. |
-| Background execution | MV3 service worker | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh. |
-| Bundling | esbuild | Builds shared sources for Chromium and Firefox under `dist/`. |
-| Storage | Edge extension local storage with `unlimitedStorage` | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state. |
-| API access | Direct `fetch()` with Cairo cookies, direct GTC requests, and ESATS bearer-token fallback | Cairo and GTC do not require open tabs. ESATS prefers a session-cached bearer token and retains its trusted-tab fallback. |
-| Validation engine | Local JavaScript checkpoint modules `RP1` through `RP14` | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data. |
-| Review engine | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
-| Excel export | Bundled `ExcelJS` plus encoded workbook template | Creates validation workbook with summary and assessment-level sheets. |
-| Word export | Custom OpenXML `.docx` generator | Creates Word review notes with formatted tables, sections, and clickable checkbox content controls. |
-| Build output | `dist/` folder | Loadable production extension package. |
+| Layer                   | Technology                                                                                   | Purpose                                                                                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edge extension platform | Microsoft Edge Manifest V3                                                                   | Runs the popup UI and service worker automation inside Microsoft Edge.                                                                                      |
+| UI                      | HTML, CSS, vanilla JavaScript ES modules                                                     | Popup interface, assessment filters, tabs, progress, results, modals, review notes.                                                                         |
+| Background execution    | MV3 service worker                                                                           | Assessment refresh, validation jobs, review jobs, local persistence, scheduled refresh.                                                                     |
+| Bundling                | esbuild                                                                                      | Builds shared sources for Chromium and Firefox under `dist/`.                                                                                             |
+| Storage                 | Edge extension local storage with `unlimitedStorage`                                       | Stores assessments, validation results, review results, selected review mode, progress, contexts, ASA Notes, and UI state.                                  |
+| API access              | Direct `fetch()` with Cairo cookies, direct GTC requests, and ESATS bearer-token fallback  | Cairo and GTC do not require open tabs. ESATS prefers a session-cached bearer token and retains its trusted-tab fallback.                                   |
+| Validation engine       | Local JavaScript checkpoint modules `RP1` through `RP14`                                 | Runs deterministic validation rules against assembled context, normalized answers, review approvals, and conditional question-summary data.                 |
+| Review engine           | Local JavaScript conversion of the provided Python reachable-unanswered-work-queue algorithm | Compares old/new questions and answers, applies review mode configuration, computes reachable unanswered review items, and records UI reachability reasons. |
+| Excel export            | Bundled `ExcelJS` plus encoded workbook template                                           | Creates validation workbook with summary and assessment-level sheets.                                                                                       |
+| Word export             | Custom OpenXML `.docx` generator                                                           | Creates Word review notes with formatted tables, sections, and clickable checkbox content controls.                                                         |
+| Build output            | `dist/` folder                                                                             | Loadable production extension package.                                                                                                                      |
 
 Primary source folders:
 
@@ -87,23 +87,23 @@ Primary source folders:
 
 Manifest permissions:
 
-| Permission | Why it is used |
-|---|---|
-| `storage` | Stores assessment lists, validation results, review results, failed assessment retry data, contexts, progress, and UI state. |
-| `unlimitedStorage` | Prevents Edge extension storage quota pressure when many assessments, contexts, and result sets are retained locally. |
-| `alarms` | Schedules periodic assessment refresh every 30 minutes. |
-| `tabs` | Finds/opens an ESATS tab only for bearer-token fallback and opens optional prerequisite links. |
-| `scripting` | Reads the ESATS bearer token and retains the prior ESATS page-context fetch as a fallback. |
+| Permission           | Why it is used                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `storage`          | Stores assessment lists, validation results, review results, failed assessment retry data, contexts, progress, and UI state. |
+| `unlimitedStorage` | Prevents Edge extension storage quota pressure when many assessments, contexts, and result sets are retained locally.        |
+| `alarms`           | Schedules periodic assessment refresh every 30 minutes.                                                                      |
+| `tabs`             | Finds/opens an ESATS tab only for bearer-token fallback and opens optional prerequisite links.                               |
+| `scripting`        | Reads the ESATS bearer token and retains the prior ESATS page-context fetch as a fallback.                                   |
 
 Host permissions:
 
-| Host permission | Purpose |
-|---|---|
-| `https://cairois.web.boeing.com/*` | Cairo assessment, survey, template, answer, contact, and review-summary data. |
-| `https://service-gateway.tas-phx.apps.boeing.com/*` | ESATS gateway application version and artifact data. |
-| `https://termbank.web.boeing.com/*` | GTC vocabulary/API lookup for export-control artifacts. |
-| `https://esats.web.boeing.com/*` | Trusted signed-in ESATS page used for token-backed gateway calls. |
-| `https://gtc-ecm.web.boeing.com/*` | Optional GTC Mapper link retained for troubleshooting; GTC API calls do not depend on it. |
+| Host permission                                       | Purpose                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `https://cairois.web.boeing.com/*`                  | Cairo assessment, survey, template, answer, contact, and review-summary data.             |
+| `https://service-gateway.tas-phx.apps.boeing.com/*` | ESATS gateway application version and artifact data.                                      |
+| `https://termbank.web.boeing.com/*`                 | GTC vocabulary/API lookup for export-control artifacts.                                   |
+| `https://esats.web.boeing.com/*`                    | Trusted signed-in ESATS page used for token-backed gateway calls.                         |
+| `https://gtc-ecm.web.boeing.com/*`                  | Optional GTC Mapper link retained for troubleshooting; GTC API calls do not depend on it. |
 
 What the extension does:
 
@@ -124,43 +124,43 @@ All automation calls are read-only `GET` requests. The extension does not create
 
 #### Cairo Endpoints
 
-| Endpoint | Method | Triggered by | Purpose |
-|---|---:|---|---|
-| `https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35` | `GET` | Assessment refresh, Cairo prerequisite check | Loads primary Risk Profiler assessment inventory. |
-| `https://cairois.web.boeing.com/api/assessment/{id}/detail` | `GET` | Validation, review | Loads assessment detail, including survey template ID. |
-| `https://cairois.web.boeing.com/api/assessment/survey/{id}/answers` | `GET` | Validation, review | Loads assessment survey answers. |
-| `https://cairois.web.boeing.com/api/assessment/{id}/contacts` | `GET` | Legacy/available Cairo contact lookup | Loads assessment contacts if this wrapper is used by future review or validation logic. Current review notes use the ESATS contact-details summary endpoint. |
-| `https://cairois.web.boeing.com/api/survey/template/{id}/questions` | `GET` | Validation, review, survey diff | Loads questions for a survey template. |
-| `https://cairois.web.boeing.com/api/surveyTemplate/{id}` | `GET` | Review mode, survey diff | Loads survey-template metadata. |
-| `https://cairois.web.boeing.com/api/surveyTemplate?where=alternateSurveyTemplateId:=:rp-app` | `GET` | Review mode, What's New modal | Loads all Risk Profiler app survey template versions. |
-| `https://cairois.web.boeing.com/api/asset/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6` | `GET` | Validation mode | Loads review summary data used by checkpoint rules. |
-| `https://cairois.web.boeing.com/api/assessment/survey/{assessmentId}/question/{surveyTemplateQuestionId}` | `GET` | Conditional validation in RP2/RP3 | Loads question summary/collector data when URL evidence is needed. |
+| Endpoint                                                                                                                |  Method | Triggered by                                 | Purpose                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------- | ------: | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35`                                                    | `GET` | Assessment refresh, Cairo prerequisite check | Loads primary Risk Profiler assessment inventory.                                                                                                            |
+| `https://cairois.web.boeing.com/api/assessment/{id}/detail`                                                           | `GET` | Validation, review                           | Loads assessment detail, including survey template ID.                                                                                                       |
+| `https://cairois.web.boeing.com/api/assessment/survey/{id}/answers`                                                   | `GET` | Validation, review                           | Loads assessment survey answers.                                                                                                                             |
+| `https://cairois.web.boeing.com/api/assessment/{id}/contacts`                                                         | `GET` | Legacy/available Cairo contact lookup        | Loads assessment contacts if this wrapper is used by future review or validation logic. Current review notes use the ESATS contact-details summary endpoint. |
+| `https://cairois.web.boeing.com/api/survey/template/{id}/questions`                                                   | `GET` | Validation, review, survey diff              | Loads questions for a survey template.                                                                                                                       |
+| `https://cairois.web.boeing.com/api/surveyTemplate/{id}`                                                              | `GET` | Review mode, survey diff                     | Loads survey-template metadata.                                                                                                                              |
+| `https://cairois.web.boeing.com/api/surveyTemplate?where=alternateSurveyTemplateId:=:rp-app`                          | `GET` | Review mode, What's New modal                | Loads all Risk Profiler app survey template versions.                                                                                                        |
+| `https://cairois.web.boeing.com/api/asset/4/{assetId}/assessment/review/summaries?assessmentTypeId=35&reviewTypeId=6` | `GET` | Validation mode                              | Loads review summary data used by checkpoint rules.                                                                                                          |
+| `https://cairois.web.boeing.com/api/assessment/survey/{assessmentId}/question/{surveyTemplateQuestionId}`             | `GET` | Conditional validation in RP2/RP3            | Loads question summary/collector data when URL evidence is needed.                                                                                           |
 
 #### ESATS Endpoints
 
-| Endpoint | Method | Triggered by | Purpose |
-|---|---:|---|---|
-| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId={assetId}` | `GET` | Validation mode | Loads ESATS application versions. |
-| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}` | `GET` | Validation mode | Loads version policy/artifact data for each ESATS version. |
-| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}` | `GET` | Review mode | Loads ESATS contact details used in review output and Word review notes. |
+| Endpoint                                                                                                                                                                      |  Method | Triggered by    | Purpose                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------: | --------------- | ------------------------------------------------------------------------ |
+| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersion/GetBusinessApplicationVersions?esatsId={assetId}`                                 | `GET` | Validation mode | Loads ESATS application versions.                                        |
+| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationVersionDocument/GetBusinessApplicationVersionPolicyAndArtifacts?esatsId={versionEsatsId}` | `GET` | Validation mode | Loads version policy/artifact data for each ESATS version.               |
+| `https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/BusinessApplicationSummary/GetContactDetailsSummary?esatsId={assetId}`                                       | `GET` | Review mode     | Loads ESATS contact details used in review output and Word review notes. |
 
 ESATS gateway requests prefer a direct extension request with the bearer token cached for the browser session. The extension can obtain that token from an existing signed-in ESATS page. If the token is missing or rejected, the earlier trusted-tab request/recovery path remains available. Token values are not written to the console.
 
 #### GTC Endpoints
 
-| Endpoint | Method | Triggered by | Purpose |
-|---|---:|---|---|
+| Endpoint                                                                                     |  Method | Triggered by    | Purpose                                                                                   |
+| -------------------------------------------------------------------------------------------- | ------: | --------------- | ----------------------------------------------------------------------------------------- |
 | `https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/{name}.json` | `GET` | Validation mode | Looks up GTC export-control vocabulary details for artifacts with `policyRuleId === 2`. |
 
 GTC requests are sent directly from the extension without cookies; no GTC login or open GTC tab is required.
 
 #### Session/Prerequisite Checks
 
-| URL | Method | Purpose |
-|---|---:|---|
+| URL                                                                  |  Method | Purpose                            |
+| -------------------------------------------------------------------- | ------: | ---------------------------------- |
 | `https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35` | `GET` | Verifies Cairo session/API access. |
-| `https://service-gateway.tas-phx.apps.boeing.com/` | `GET` | Verifies ESATS gateway access. |
-| `https://termbank.web.boeing.com/` | `GET` | Verifies GTC access. |
+| `https://service-gateway.tas-phx.apps.boeing.com/`                 | `GET` | Verifies ESATS gateway access.     |
+| `https://termbank.web.boeing.com/`                                 | `GET` | Verifies GTC access.               |
 
 ## 2. Automation Statistics & Performance
 
@@ -187,16 +187,16 @@ Validation builds a context and then runs RP1 through RP14 locally.
 
 Per selected assessment, baseline validation requests:
 
-| Source | Count | Description |
-|---|---:|---|
-| Cairo assessment detail | 1 | `assessment/{id}/detail` |
-| Cairo assessment answers | 1 | `assessment/survey/{id}/answers` |
-| Cairo survey questions | 1 | `survey/template/{id}/questions` |
-| Cairo review summary | 1 | `asset/4/{assetId}/assessment/review/summaries...` |
-| ESATS versions | 1 | `GetBusinessApplicationVersions?esatsId={assetId}` |
-| ESATS artifacts | `V` | One request per ESATS version. |
-| GTC lookups | `E` | One request per export-control artifact where `policyRuleId === 2`. |
-| Cairo question summary | `Q` | Conditional, currently up to 2 from RP2 and RP3 depending on answers. |
+| Source                   | Count | Description                                                           |
+| ------------------------ | ----: | --------------------------------------------------------------------- |
+| Cairo assessment detail  |     1 | `assessment/{id}/detail`                                            |
+| Cairo assessment answers |     1 | `assessment/survey/{id}/answers`                                    |
+| Cairo survey questions   |     1 | `survey/template/{id}/questions`                                    |
+| Cairo review summary     |     1 | `asset/4/{assetId}/assessment/review/summaries...`                  |
+| ESATS versions           |     1 | `GetBusinessApplicationVersions?esatsId={assetId}`                  |
+| ESATS artifacts          | `V` | One request per ESATS version.                                        |
+| GTC lookups              | `E` | One request per export-control artifact where `policyRuleId === 2`. |
+| Cairo question summary   | `Q` | Conditional, currently up to 2 from RP2 and RP3 depending on answers. |
 
 Validation formula for one assessment:
 
@@ -232,14 +232,14 @@ The extension can fall back to cached survey template data if the live template-
 
 For an assessment with an incomplete assessment ID in Initial Review Mode:
 
-| Request | Count |
-|---|---:|
-| Last assessment detail | 1 |
-| Last assessment survey questions | 1 |
-| Last assessment answers | 1 |
-| ESATS contact-details summary | 1 |
-| Incomplete assessment detail | 1 |
-| Incomplete assessment survey questions | 1 |
+| Request                                | Count |
+| -------------------------------------- | ----: |
+| Last assessment detail                 |     1 |
+| Last assessment survey questions       |     1 |
+| Last assessment answers                |     1 |
+| ESATS contact-details summary          |     1 |
+| Incomplete assessment detail           |     1 |
+| Incomplete assessment survey questions |     1 |
 
 Formula:
 
@@ -259,14 +259,14 @@ Run total = 1 + (7 * selected assessment count)
 
 For completed assessments with no incomplete assessment ID:
 
-| Request | Count |
-|---|---:|
-| Last assessment detail | 1 |
-| Last assessment survey questions | 1 |
-| Last assessment answers | 1 |
-| ESATS contact-details summary | 1 |
-| Latest active survey template detail | 1 |
-| Latest active survey template questions | 1 |
+| Request                                 | Count |
+| --------------------------------------- | ----: |
+| Last assessment detail                  |     1 |
+| Last assessment survey questions        |     1 |
+| Last assessment answers                 |     1 |
+| ESATS contact-details summary           |     1 |
+| Latest active survey template detail    |     1 |
+| Latest active survey template questions |     1 |
 
 Formula:
 
@@ -287,22 +287,22 @@ Formula:
 
 Examples:
 
-| Scenario | Formula | Logical requests |
-|---|---:|---:|
-| Minimum-like case: no ESATS versions, no GTC lookups, no conditional question summary | `10 * (5 + 0 + 0 + 0)` | 50 |
-| Example case: 3 ESATS versions, 2 GTC artifacts, 1 conditional question summary per assessment | `10 * (5 + 3 + 2 + 1)` | 110 |
-| Heavier case: 5 ESATS versions, 5 GTC artifacts, 2 conditional summaries per assessment | `10 * (5 + 5 + 5 + 2)` | 170 |
+| Scenario                                                                                       |                  Formula | Logical requests |
+| ---------------------------------------------------------------------------------------------- | -----------------------: | ---------------: |
+| Minimum-like case: no ESATS versions, no GTC lookups, no conditional question summary          | `10 * (5 + 0 + 0 + 0)` |               50 |
+| Example case: 3 ESATS versions, 2 GTC artifacts, 1 conditional question summary per assessment | `10 * (5 + 3 + 2 + 1)` |              110 |
+| Heavier case: 5 ESATS versions, 5 GTC artifacts, 2 conditional summaries per assessment        | `10 * (5 + 5 + 5 + 2)` |              170 |
 
 Because validation runs 5 assessments concurrently, 10 assessments are processed in roughly 2 batches, subject to API response time and retries.
 
 #### Review for 10 Assessments
 
-| Review scenario | Formula | Logical requests |
-|---|---:|---:|
-| 10 completed assessments | `1 + (10 * 6)` | 61 |
-| 10 incomplete assessments in Initial Review Mode | `1 + (10 * 6)` | 61 |
-| 10 incomplete assessments in selected-answer review mode | `1 + (10 * 7)` | 71 |
-| Mixed example: 6 completed + 4 incomplete in selected-answer review mode | `1 + (6 * 6) + (4 * 7)` | 65 |
+| Review scenario                                                          |                   Formula | Logical requests |
+| ------------------------------------------------------------------------ | ------------------------: | ---------------: |
+| 10 completed assessments                                                 |          `1 + (10 * 6)` |               61 |
+| 10 incomplete assessments in Initial Review Mode                         |          `1 + (10 * 6)` |               61 |
+| 10 incomplete assessments in selected-answer review mode                 |          `1 + (10 * 7)` |               71 |
+| Mixed example: 6 completed + 4 incomplete in selected-answer review mode | `1 + (6 * 6) + (4 * 7)` |               65 |
 
 Because review runs 3 assessments concurrently, 10 assessments are processed in roughly 4 batches, subject to API response time and retries.
 
@@ -378,10 +378,10 @@ Because review runs 3 assessments concurrently, 10 assessments are processed in 
 
 Review modes:
 
-| Mode | Applies to | Data used | Notes |
-|---|---|---|---|
-| Initial Review Mode | Completed and incomplete assessments | Old questions, old answers, and new questions | Default mode. Completed assessments always use this behavior. |
-| Review Based on Selected Answers | Incomplete assessments only | Old questions, old answers, new questions, and `newAnswers` | Uses only answers currently present on the incomplete assessment. Completed assessments ignore this setting. |
+| Mode                             | Applies to                           | Data used                                                     | Notes                                                                                                        |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Initial Review Mode              | Completed and incomplete assessments | Old questions, old answers, and new questions                 | Default mode. Completed assessments always use this behavior.                                                |
+| Review Based on Selected Answers | Incomplete assessments only          | Old questions, old answers, new questions, and `newAnswers` | Uses only answers currently present on the incomplete assessment. Completed assessments ignore this setting. |
 
 #### Word Review Notes Generation
 
@@ -772,17 +772,17 @@ Every checkpoint receives a `context` object built by `core/contextBuilder.js`.
 
 Important context fields:
 
-| Field | Description |
-|---|---|
-| `context.application` | Normalized assessment list item from Cairo primary assessment data. |
-| `context.assessment` | Cairo assessment detail response. |
-| `context.answers` | Cairo assessment survey answers. Helper functions normalize duplicate `alternateQuestionId` records to the latest answer before returning values. |
-| `context.surveyQuestions` | Cairo survey template questions. |
-| `context.questionMap` | Map keyed by `alternateQuestionId`. |
-| `context.reviewSummary` | Cairo review summary data for approval/review-related checks. |
-| `context.versions` | ESATS business application versions. |
-| `context.artifacts` | ESATS policy/artifact data. |
-| `context.exportControl` | GTC lookup responses for export-control artifacts. |
+| Field                       | Description                                                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context.application`     | Normalized assessment list item from Cairo primary assessment data.                                                                                 |
+| `context.assessment`      | Cairo assessment detail response.                                                                                                                   |
+| `context.answers`         | Cairo assessment survey answers. Helper functions normalize duplicate `alternateQuestionId` records to the latest answer before returning values. |
+| `context.surveyQuestions` | Cairo survey template questions.                                                                                                                    |
+| `context.questionMap`     | Map keyed by `alternateQuestionId`.                                                                                                               |
+| `context.reviewSummary`   | Cairo review summary data for approval/review-related checks.                                                                                       |
+| `context.versions`        | ESATS business application versions.                                                                                                                |
+| `context.artifacts`       | ESATS policy/artifact data.                                                                                                                         |
+| `context.exportControl`   | GTC lookup responses for export-control artifacts.                                                                                                  |
 
 ### Standard Checkpoint Return Values
 
@@ -798,11 +798,11 @@ import {
 
 Return values:
 
-| Helper | Status | Meaning |
-|---|---|---|
-| `pass(id, reason)` | `PASS` | Checkpoint passed. |
-| `fail(id, reason)` | `FAIL` | Checkpoint failed and needs attention. |
-| `notApplicable(id, reason)` | `NA` | Checkpoint does not apply to this assessment. |
+| Helper                        | Status   | Meaning                                       |
+| ----------------------------- | -------- | --------------------------------------------- |
+| `pass(id, reason)`          | `PASS` | Checkpoint passed.                            |
+| `fail(id, reason)`          | `FAIL` | Checkpoint failed and needs attention.        |
+| `notApplicable(id, reason)` | `NA`   | Checkpoint does not apply to this assessment. |
 
 The `reason` text is important. It is shown in:
 
@@ -843,26 +843,26 @@ Use `requiredQuestions` when the checkpoint cannot produce a meaningful result w
 
 Useful helpers in `checkpoints/helpers.js`:
 
-| Helper | Purpose |
-|---|---|
-| `getAnswer(context, questionId)` | Gets one answer by `alternateQuestionId`. |
-| `getAnswers(context)` | Returns a normalized answer list. Duplicate `alternateQuestionId` records are reduced to the latest answer by `updatedOn`, then `createdOn`, then ID tie breakers. |
-| `getValues(context, questionId)` | Extracts answer values for a question. |
-| `hasAnswer(context, questionId)` | Checks whether a question has any answer value. |
-| `includesValue(context, questionId, expected)` | Checks exact normalized answer match. |
-| `includesAnyValue(context, questionId, expectedValues)` | Checks whether answer matches any expected values. |
-| `valueContainsAny(context, questionId, fragments)` | Checks partial normalized matches. |
-| `isYes(context, questionId)` | Checks whether answer is `Yes`. |
-| `isNo(context, questionId)` | Checks whether answer is `No`. |
-| `isSaas(context)` | Checks SaaS-style app type. |
-| `isWebLikeApplication(context)` | Checks web/API/SaaS/PaaS style app type. |
-| `hasRiskProfilerApprovals(context)` | Checks whether Risk Profiler approval/review summary data supports approval-dependent checkpoint exceptions. |
-| `extractHttpUrls(node)` | Walks a nested payload and returns unique HTTP/HTTPS URLs from collector-style or JSON-style question-summary responses. |
-| `findValuesByKeyFragment(node, fragments)` | Searches nested objects for key fragments. |
-| `collectValuesByKey(node, keyName)` | Collects nested values by exact key. |
-| `findAssessmentById(node, assessmentId)` | Finds assessment object in nested review summary. |
-| `deploymentPhase(context)` | Gets lifecycle/deployment phase from assessment/version context. |
-| `getQuestionSummary(context, surveyTemplateQuestionId)` | Makes an extra Cairo question-summary API call. Use only when needed. |
+| Helper                                                    | Purpose                                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getAnswer(context, questionId)`                        | Gets one answer by `alternateQuestionId`.                                                                                                                              |
+| `getAnswers(context)`                                   | Returns a normalized answer list. Duplicate `alternateQuestionId` records are reduced to the latest answer by `updatedOn`, then `createdOn`, then ID tie breakers. |
+| `getValues(context, questionId)`                        | Extracts answer values for a question.                                                                                                                                   |
+| `hasAnswer(context, questionId)`                        | Checks whether a question has any answer value.                                                                                                                          |
+| `includesValue(context, questionId, expected)`          | Checks exact normalized answer match.                                                                                                                                    |
+| `includesAnyValue(context, questionId, expectedValues)` | Checks whether answer matches any expected values.                                                                                                                       |
+| `valueContainsAny(context, questionId, fragments)`      | Checks partial normalized matches.                                                                                                                                       |
+| `isYes(context, questionId)`                            | Checks whether answer is `Yes`.                                                                                                                                        |
+| `isNo(context, questionId)`                             | Checks whether answer is `No`.                                                                                                                                         |
+| `isSaas(context)`                                       | Checks SaaS-style app type.                                                                                                                                              |
+| `isWebLikeApplication(context)`                         | Checks web/API/SaaS/PaaS style app type.                                                                                                                                 |
+| `hasRiskProfilerApprovals(context)`                     | Checks whether Risk Profiler approval/review summary data supports approval-dependent checkpoint exceptions.                                                             |
+| `extractHttpUrls(node)`                                 | Walks a nested payload and returns unique HTTP/HTTPS URLs from collector-style or JSON-style question-summary responses.                                                 |
+| `findValuesByKeyFragment(node, fragments)`              | Searches nested objects for key fragments.                                                                                                                               |
+| `collectValuesByKey(node, keyName)`                     | Collects nested values by exact key.                                                                                                                                     |
+| `findAssessmentById(node, assessmentId)`                | Finds assessment object in nested review summary.                                                                                                                        |
+| `deploymentPhase(context)`                              | Gets lifecycle/deployment phase from assessment/version context.                                                                                                         |
+| `getQuestionSummary(context, surveyTemplateQuestionId)` | Makes an extra Cairo question-summary API call. Use only when needed.                                                                                                    |
 
 ### How to Modify an Existing Checkpoint
 
@@ -873,7 +873,6 @@ Useful helpers in `checkpoints/helpers.js`:
    ```text
    checkpoints/RP5.js
    ```
-
 2. Review the existing checkpoint object:
 
    - `id`
@@ -881,21 +880,15 @@ Useful helpers in `checkpoints/helpers.js`:
    - `category`
    - `requiredQuestions`
    - `validate(context)`
-
 3. Change only the business logic needed inside `validate(context)`.
-
 4. If the rule now depends on different survey questions, update `requiredQuestions`.
-
 5. Keep the `id` stable unless the checkpoint is being renamed by business decision. Excel export and reporting rely on checkpoint IDs.
-
 6. Return `pass`, `fail`, or `notApplicable` with clear reason text.
-
 7. Run:
 
    ```bash
    npm run build
    ```
-
 8. Load the `dist/` extension and test the checkpoint against:
 
    - a passing assessment,
@@ -912,13 +905,11 @@ Useful helpers in `checkpoints/helpers.js`:
    ```text
    RP14
    ```
-
 2. Create a new file:
 
    ```text
    checkpoints/RP14.js
    ```
-
 3. Use this starter template:
 
    ```js
@@ -970,7 +961,6 @@ Useful helpers in `checkpoints/helpers.js`:
 
    export default RP14;
    ```
-
 4. Register the checkpoint in `core/checkpointRegistry.js`.
 
    Add an import:
@@ -991,9 +981,7 @@ Useful helpers in `checkpoints/helpers.js`:
        RP14
    ];
    ```
-
 5. If the Excel template has a dedicated row for checkpoint IDs, update the template so the new `RP14` row exists. The exporter discovers rows by matching checkpoint IDs such as `RP1`, `RP2`, etc. If the workbook template does not contain `RP14`, the checkpoint can still appear in summary data, but it will not populate a dedicated detailed row in the cloned assessment sheet.
-
 6. If the new checkpoint requires additional API data not currently in `context`, update `core/contextBuilder.js` carefully.
 
    Before adding new API calls, confirm:
@@ -1003,7 +991,6 @@ Useful helpers in `checkpoints/helpers.js`:
    - whether it increases per-assessment request volume,
    - whether it requires new host permissions,
    - whether it should be cached.
-
 7. If a new endpoint is needed, add it to:
 
    ```text
@@ -1015,13 +1002,11 @@ Useful helpers in `checkpoints/helpers.js`:
    ```text
    api/
    ```
-
 8. Run:
 
    ```bash
    npm run build
    ```
-
 9. Test the new checkpoint in the UI and Excel export.
 
 ### How to Remove a Checkpoint
@@ -1031,7 +1016,6 @@ Useful helpers in `checkpoints/helpers.js`:
    ```text
    core/checkpointRegistry.js
    ```
-
 2. Remove the checkpoint import.
 
    Example:
@@ -1039,26 +1023,20 @@ Useful helpers in `checkpoints/helpers.js`:
    ```js
    import RP14 from "../checkpoints/RP14.js";
    ```
-
 3. Remove the checkpoint from the `CHECKPOINTS` array.
-
 4. Decide whether to keep or delete the file under `checkpoints/`.
 
    Recommended approach:
 
    - Keep the file temporarily if removal is experimental.
    - Delete the file when the checkpoint is formally retired.
-
 5. If the Excel template has a dedicated row for the removed checkpoint, decide whether to remove it from the template or leave it blank for historical consistency.
-
 6. Update documentation and release notes so business users know the checkpoint is no longer part of scoring.
-
 7. Run:
 
    ```bash
    npm run build
    ```
-
 8. Validate that:
 
    - the removed checkpoint no longer appears in Validation Results,
