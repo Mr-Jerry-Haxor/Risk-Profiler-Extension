@@ -158,7 +158,8 @@ GTC requests are sent directly from the extension without cookies; no GTC login 
 
 | URL                                                                  |  Method | Purpose                            |
 | -------------------------------------------------------------------- | ------: | ---------------------------------- |
-| `https://cairois.web.boeing.com/api/asset/4/82/assessment/type/35` | `GET` | Verifies Cairo session/API access. |
+| `https://cairois.web.boeing.com/node-api/authorization` | `GET` | Primary Cairo session/API check; retries twice before fallback. |
+| `https://cairois.web.boeing.com/node-api/assets/4/82/assessment/type/35` | `GET` | Cairo prerequisite fallback after the authorization check and its two retries fail. |
 | `https://service-gateway.tas-phx.apps.boeing.com/`                 | `GET` | Verifies ESATS gateway access.     |
 | `https://termbank.web.boeing.com/`                                 | `GET` | Verifies GTC access.               |
 

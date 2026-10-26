@@ -1255,12 +1255,29 @@ async function checkPrerequisite(
     try {
 
         if (check.id === "cairo") {
-            const assessments = await fetchJson(check.url, { useCache: false, retryUntilAvailable: false, retries: 1 });
-            const probeAssetId = (Array.isArray(assessments) ? assessments : [])
-                .find(item => /^[1-9]\d*$/.test(String(item?.assetId ?? "")))?.assetId;
-            return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: check.url,
-                openedTab: false, mode: "direct-cookies", probeAssetId,
-                message: "Cairo data is accessible directly with cookies; no Cairo tab was used" };
+            try {
+                await fetchJson(check.url, {
+                    useCache: false,
+                    retryUntilAvailable: false,
+                    // Three total attempts: the initial request plus two retries.
+                    retries: 3
+                });
+                return { id: check.id, name: check.name, passed: true, status: 200, finalUrl: check.url,
+                    openedTab: false, mode: "direct-cookies",
+                    message: "Cairo authorization is accessible directly with cookies; no Cairo tab was used" };
+            } catch {
+                finalUrl = check.fallbackUrl;
+                const assessments = await fetchJson(check.fallbackUrl, {
+                    useCache: false,
+                    retryUntilAvailable: false,
+                    retries: 1
+                });
+                const probeAssetId = (Array.isArray(assessments) ? assessments : [])
+                    .find(item => /^[1-9]\d*$/.test(String(item?.assetId ?? "")))?.assetId;
+                return { id: check.id, name: check.name, passed: true, status: 200,
+                    finalUrl: check.fallbackUrl, openedTab: false, mode: "direct-cookies-fallback", probeAssetId,
+                    message: "Cairo authorization was unavailable after two retries; the existing assessment endpoint succeeded" };
+            }
         }
 
         if (check.id === "gtc") {

@@ -1,6 +1,6 @@
 export const CONFIG = {
 
-    VERSION: "1.2.1",
+    VERSION: "1.3",
 
     MAX_CONCURRENT_VALIDATIONS: 5,
 
@@ -52,6 +52,9 @@ export const REVIEW_SEMANTIC_OPTION_MATCH_QUESTION_IDS = [
 export const REVIEW_SEMANTIC_OPTION_MATCH_THRESHOLD = 0.8;
 
 export const URLS = {
+
+    CAIRO_AUTHORIZATION:
+        "https://cairois.web.boeing.com/node-api/authorization",
 
     PRIMARY_ASSESSMENTS:
         "https://cairois.web.boeing.com/node-api/assets/4/82/assessment/type/35",
@@ -105,6 +108,8 @@ export const PREREQUISITE_CHECKS = [
         id: "cairo",
         name: "Cairo",
         url:
+            URLS.CAIRO_AUTHORIZATION,
+        fallbackUrl:
             URLS.PRIMARY_ASSESSMENTS,
         openUrl:
             "https://cairois.web.boeing.com/",

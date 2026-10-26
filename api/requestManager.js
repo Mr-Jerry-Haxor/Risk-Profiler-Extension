@@ -431,16 +431,20 @@ export async function probeDirectEndpoint(siteId, url) {
 }
 
 async function fetchDirectJson(url, site, bearerToken = null) {
+    const requestUrl = new URL(url);
     const response = await fetch(url, {
         credentials: site?.id === "cairo" ? "include" : "omit",
         headers: {
             Accept: "application/json, text/plain, */*",
+            ...(site?.id === "cairo" && requestUrl.pathname === "/node-api/authorization"
+                ? { "X-Requested-With": "XMLHttpRequest" }
+                : {}),
             ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
         },
         cache: "no-store", signal: AbortSignal.timeout(requestTimeoutFor(site))
     });
     if (!response.ok) throw requestError(`HTTP ${response.status}`, response.status, isRetryableStatus(response.status));
-    if (new URL(response.url || url).hostname !== new URL(url).hostname) throw requestError("Redirected to sign-in", 401);
+    if (new URL(response.url || url).hostname !== requestUrl.hostname) throw requestError("Redirected to sign-in", 401);
     try {
         return await response.json();
     } catch {

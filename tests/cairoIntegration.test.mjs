@@ -283,17 +283,57 @@ test("GTC readiness is direct while ESATS without an asset retains its session f
     assert.deepEqual(direct, [{ id: "gtc", url: PREREQUISITE_CHECKS.find(item => item.id === "gtc").url }]);
 });
 
-test("a first manual prerequisite check uses Cairo's returned asset ID for the ESATS token test", async () => {
+test("Cairo readiness uses authorization with two retries before considering the fallback", async () => {
+    const h = await workerHarness();
+    const requests = [];
+    h.context.fetchJson = async (url, options) => { requests.push({ url, options }); return { identity: {} }; };
+
+    const result = await h.context.checkPrerequisite(PREREQUISITE_CHECKS.find(check => check.id === "cairo"));
+
+    assert.equal(result.passed, true);
+    assert.equal(result.finalUrl, URLS.CAIRO_AUTHORIZATION);
+    assert.equal(result.mode, "direct-cookies");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, URLS.CAIRO_AUTHORIZATION);
+    assert.equal(requests[0].options.useCache, false);
+    assert.equal(requests[0].options.retryUntilAvailable, false);
+    assert.equal(requests[0].options.retries, 3);
+});
+
+test("Cairo readiness falls back to the current assessment endpoint after authorization fails", async () => {
+    const h = await workerHarness();
+    const requests = [];
+    h.context.fetchJson = async (url, options) => {
+        requests.push({ url, options });
+        if (url === URLS.CAIRO_AUTHORIZATION) throw new Error("authorization unavailable");
+        return [{ assetId: "40326" }];
+    };
+
+    const result = await h.context.checkPrerequisite(PREREQUISITE_CHECKS.find(check => check.id === "cairo"));
+
+    assert.equal(result.passed, true);
+    assert.equal(result.finalUrl, URLS.PRIMARY_ASSESSMENTS);
+    assert.equal(result.mode, "direct-cookies-fallback");
+    assert.equal(result.probeAssetId, "40326");
+    assert.deepEqual(requests.map(request => [request.url, request.options.retries]), [
+        [URLS.CAIRO_AUTHORIZATION, 3],
+        [URLS.PRIMARY_ASSESSMENTS, 1]
+    ]);
+});
+
+test("a Cairo prerequisite fallback uses its returned asset ID for the ESATS token test", async () => {
     const h = await workerHarness();
     const requests = [];
     h.context.fetchJson = async url => {
         requests.push(url);
+        if (url === URLS.CAIRO_AUTHORIZATION) throw new Error("authorization unavailable");
         return url === URLS.PRIMARY_ASSESSMENTS ? [{ assetId: "40326" }] : { ready: true };
     };
     const result = await h.context.checkPrerequisites();
     assert.equal(result.passed, true);
-    assert.equal(requests[0], URLS.PRIMARY_ASSESSMENTS);
-    assert.equal(requests[1], URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326"));
+    assert.equal(requests[0], URLS.CAIRO_AUTHORIZATION);
+    assert.equal(requests[1], URLS.PRIMARY_ASSESSMENTS);
+    assert.equal(requests[2], URLS.ESATS_CONTACT_DETAILS_SUMMARY.replace("{assetId}", "40326"));
     assert.equal(result.checks.find(check => check.id === "esats").mode, "bearer-with-fallback");
 });
 

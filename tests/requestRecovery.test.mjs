@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const cairoUrl = "https://cairois.web.boeing.com/api/assessment/1/detail";
+const cairoAuthorizationUrl = "https://cairois.web.boeing.com/node-api/authorization";
 const esatsUrl = "https://service-gateway.tas-phx.apps.boeing.com/gateway/asset/versions?id=1";
 const gtcUrl = "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/test.json";
 const gtcPrerequisiteUrl = "https://termbank.web.boeing.com/ses/v1.2/GlobalTradeControlVocabularies/name/0A002.json";
@@ -39,6 +40,44 @@ test("passive Cairo requests fail without opening or recovering a tab", async ()
         /offline/
     );
     assert.equal(h.creations.length, 0);
+});
+
+test("Cairo authorization uses the HAR-observed cookie and XMLHttpRequest request shape", async () => {
+    const h = await harness();
+    h.replies.set(cairoAuthorizationUrl, [{
+        status: 200,
+        data: { statusCode: 200, data: { identity: {}, roles: [], privileges: [] } }
+    }]);
+
+    await h.context.fetchJson(cairoAuthorizationUrl, {
+        useCache: false,
+        retryUntilAvailable: false,
+        retries: 1
+    });
+
+    assert.equal(h.requests[0].options.credentials, "include");
+    assert.equal(h.requests[0].options.headers["X-Requested-With"], "XMLHttpRequest");
+});
+
+test("Cairo authorization makes exactly two retries before reporting failure to its fallback", async () => {
+    const h = await harness();
+    h.replies.set(cairoAuthorizationUrl, [
+        { status: 503 },
+        { status: 503 },
+        { status: 503 }
+    ]);
+
+    const outcome = h.context.fetchJson(cairoAuthorizationUrl, {
+        useCache: false,
+        retryUntilAvailable: false,
+        retries: 3
+    }).catch(error => error);
+    await flush();
+
+    assert.equal(await h.tick(), 2000);
+    assert.equal(await h.tick(), 5000);
+    assert.match((await outcome).message, /HTTP 503/);
+    assert.equal(h.requests.filter(request => request.url === cairoAuthorizationUrl).length, 3);
 });
 
 async function harness({ promiseBrowser = false } = {}) {
